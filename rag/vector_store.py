@@ -38,6 +38,8 @@ def add_chunks(collection: Any, chunks: list[dict[str, Any]]) -> None:
     """Embed and add chunks with primitive Chroma metadata."""
     if not chunks:
         return
+    if not chunks:
+        return
     model = get_embedding_model()
     texts = [chunk["text"] for chunk in chunks]
     embeddings = model.encode(texts, normalize_embeddings=True).tolist()

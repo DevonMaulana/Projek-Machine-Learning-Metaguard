@@ -1,6 +1,6 @@
 import pytest
 
-from rag.chunker import chunk_documents
+from rag.chunker import chunk_documents, is_meaningful_chunk
 
 
 def test_short_document_preserves_metadata():
@@ -35,3 +35,13 @@ def test_words_are_not_split_and_source_information_is_preserved():
     combined = " ".join(chunk["text"] for chunk in chunks)
     for phrase in ("menjelaskan", "rentang waktu", "wilayah pengamatan"):
         assert phrase in combined
+
+
+def test_short_paragraphs_are_combined_and_uninformative_chunks_rejected():
+    paragraphs = ["Ini adalah paragraf kebijakan yang cukup informatif untuk retrieval lokal." * 2,
+                  "Ketentuan ini menjelaskan tugas produsen data dan walidata secara ringkas." * 2]
+    chunks = chunk_documents([{"source": "policy.txt", "page": 1, "text": "\n\n".join(paragraphs)}], chunk_size=400)
+    assert len(chunks) == 1
+    assert all(len(chunk["text"]) >= 150 for chunk in chunks)
+    assert not is_meaningful_chunk("  12  ")
+    assert not is_meaningful_chunk("*** --- ___")

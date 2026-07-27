@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from rag.document_loader import DocumentLoadError, load_document
+from rag.document_loader import DocumentLoadError, load_document, normalize_extracted_text
+
+
+def test_normalize_extracted_text_joins_lines_and_keeps_paragraphs():
+    text = "BAB I\nKetentuan umum\n\nPasal 1\nData  yang  tersedia."
+    normalized = normalize_extracted_text(text)
+    assert normalized == "BAB I Ketentuan umum\n\nPasal 1 Data yang tersedia."
 
 
 def test_load_txt(tmp_path: Path):
@@ -20,4 +26,3 @@ def test_empty_and_unsupported_documents(tmp_path: Path):
     other.write_bytes(b"x")
     with pytest.raises(DocumentLoadError, match="Format"):
         load_document(other)
-
