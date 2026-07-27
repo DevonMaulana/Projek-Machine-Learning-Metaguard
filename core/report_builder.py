@@ -8,10 +8,27 @@ from pathlib import Path
 from typing import Any
 
 
-def build_report(profile: dict[str, Any], findings: list[dict[str, Any]], score: dict[str, Any], source: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_report(
+    profile: dict[str, Any],
+    findings: list[dict[str, Any]],
+    score: dict[str, Any],
+    source: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    metadata_validation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Combine analysis outputs into a JSON-serializable report."""
     by_severity = score.get("findings_by_severity", {})
-    return {"schema_version": "1.0", "generated_at": datetime.now(timezone.utc).isoformat(), "source": source or {}, "profile": profile, "quality_summary": {"total_findings": len(findings), "findings_by_severity": by_severity}, "findings": findings, "score": score}
+    return {
+        "schema_version": "1.0",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": source or {},
+        "profile": profile,
+        "quality_summary": {"total_findings": len(findings), "findings_by_severity": by_severity},
+        "findings": findings,
+        "score": score,
+        "metadata": metadata or {},
+        "metadata_validation": metadata_validation or {},
+    }
 
 
 def save_report_json(report: dict[str, Any], output_path: str | Path, *, overwrite: bool = False) -> Path:
