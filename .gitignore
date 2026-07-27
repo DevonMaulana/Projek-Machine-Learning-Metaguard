@@ -23,6 +23,7 @@ htmlcov/
 
 # Generated data
 vector_db/
+!vector_db/.gitkeep
 outputs/
 *.log
 

@@ -48,6 +48,28 @@ Jalankan entry point Streamlit:
 Salin `.env.example` menjadi `.env` hanya ketika konfigurasi tersebut mulai
 digunakan. Jangan menyimpan API key di repository.
 
+## Dokumen kebijakan lokal
+
+Letakkan dokumen pedoman berformat `.txt` atau `.pdf` di `data/policies/`.
+TXT dibaca sebagai UTF-8 dan PDF diekstrak per halaman tanpa OCR. Jalankan
+ingestion untuk membangun ulang vector store lokal:
+
+```powershell
+.\.venv\Scripts\python.exe -m rag.ingest
+```
+
+Vector store disimpan di `vector_db/` menggunakan ChromaDB dan model embedding
+`sentence-transformers/all-MiniLM-L6-v2`. Milestone ini hanya menyediakan
+retrieval evidence dan belum menggunakan LLM.
+
+Contoh retrieval melalui Python:
+
+```python
+from rag.retriever import retrieve_policy_chunks
+
+evidence = retrieve_policy_chunks("frekuensi pembaruan dataset", top_k=4)
+```
+
 ## Originalitas
 
 MetaGuard dikembangkan dari nol. DesignGuard dan Agentic-DesignGuard hanya digunakan sebagai referensi konseptual untuk memahami RAG dan workflow berbasis agent.
