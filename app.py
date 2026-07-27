@@ -7,7 +7,6 @@ def main() -> None:
     """Render the initial MetaGuard application page."""
     st.set_page_config(
         page_title="MetaGuard",
-        page_icon="??",
         layout="wide",
     )
 

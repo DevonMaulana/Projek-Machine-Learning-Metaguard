@@ -30,6 +30,24 @@ Fitur awal:
 
 Tahap awal: inisialisasi repository dan perancangan arsitektur.
 
+## Menjalankan aplikasi
+
+Gunakan Python 3.11 atau versi yang kompatibel, lalu siapkan environment lokal:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Jalankan entry point Streamlit:
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+Salin `.env.example` menjadi `.env` hanya ketika konfigurasi tersebut mulai
+digunakan. Jangan menyimpan API key di repository.
+
 ## Originalitas
 
 MetaGuard dikembangkan dari nol. DesignGuard dan Agentic-DesignGuard hanya digunakan sebagai referensi konseptual untuk memahami RAG dan workflow berbasis agent.
