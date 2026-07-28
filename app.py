@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from core.analysis_state import build_analysis_fingerprint
 from core.csv_reader import CsvReadError, read_csv_file
 from core.data_profiler import profile_dataframe
 from core.evidence_reviewer import review_evidence_traceability
@@ -345,6 +346,12 @@ def main() -> None:
     if "active_file_signature" not in st.session_state:
         st.session_state.active_file_signature = None
 
+    if "analysis_fingerprint" not in st.session_state:
+        st.session_state.analysis_fingerprint = None
+
+    if "analysis_state_reset" not in st.session_state:
+        st.session_state.analysis_state_reset = False
+
     uploaded_file = st.file_uploader(
         "Unggah satu file CSV",
         type=["csv"],
@@ -369,6 +376,8 @@ def main() -> None:
         st.session_state.active_file_signature = file_signature
         st.session_state.policy_evidence = []
         st.session_state.gemini_analysis = {}
+        st.session_state.analysis_fingerprint = None
+        st.session_state.analysis_state_reset = False
 
     st.caption(
         f"File: {uploaded_file.name} · "
@@ -514,6 +523,44 @@ def main() -> None:
         "responsible_unit": responsible_unit,
         "publication_purpose": publication_purpose,
     }
+
+    current_fingerprint = build_analysis_fingerprint(
+        file_name=uploaded_file.name,
+        file_bytes=file_bytes,
+        metadata=metadata,
+    )
+
+    previous_fingerprint = (
+        st.session_state.analysis_fingerprint
+    )
+
+    if (
+        previous_fingerprint is not None
+        and previous_fingerprint != current_fingerprint
+    ):
+        had_previous_results = bool(
+            st.session_state.policy_evidence
+            or st.session_state.gemini_analysis
+        )
+
+        st.session_state.policy_evidence = []
+        st.session_state.gemini_analysis = {}
+        st.session_state.analysis_state_reset = (
+            had_previous_results
+        )
+
+    st.session_state.analysis_fingerprint = (
+        current_fingerprint
+    )
+
+    if st.session_state.analysis_state_reset:
+        st.warning(
+            "Input CSV atau metadata telah berubah. "
+            "Evidence kebijakan dan analisis Gemini sebelumnya "
+            "telah dihapus. Jalankan kembali proses evidence "
+            "dan analisis Gemini."
+        )
+        st.session_state.analysis_state_reset = False
 
     metadata_validation = validate_metadata(
         metadata
