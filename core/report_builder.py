@@ -17,13 +17,19 @@ def build_report(
     metadata_validation: dict[str, Any] | None = None,
     policy_evidence: list[dict[str, Any]] | None = None,
     gemini_analysis: dict[str, Any] | None = None,
+    evidence_review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Combine analysis outputs into a JSON-serializable report."""
-    by_severity = score.get("findings_by_severity", {})
+    by_severity = score.get(
+        "findings_by_severity",
+        {},
+    )
 
     return {
         "schema_version": "1.0",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(
+            timezone.utc
+        ).isoformat(),
         "source": source or {},
         "profile": profile,
         "quality_summary": {
@@ -33,9 +39,12 @@ def build_report(
         "findings": findings,
         "score": score,
         "metadata": metadata or {},
-        "metadata_validation": metadata_validation or {},
+        "metadata_validation": (
+            metadata_validation or {}
+        ),
         "policy_evidence": policy_evidence or [],
         "gemini_analysis": gemini_analysis or {},
+        "evidence_review": evidence_review or {},
     }
 
 
@@ -45,13 +54,23 @@ def save_report_json(
     *,
     overwrite: bool = False,
 ) -> Path:
-    """Save a report as UTF-8 JSON, refusing overwrite unless explicitly enabled."""
+    """
+    Save a report as UTF-8 JSON.
+
+    Existing files are preserved unless overwrite is explicitly enabled.
+    """
     path = Path(output_path)
 
     if path.exists() and not overwrite:
-        raise FileExistsError(f"File laporan sudah ada: {path}")
+        raise FileExistsError(
+            f"File laporan sudah ada: {path}"
+        )
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     path.write_text(
         json.dumps(
             report,

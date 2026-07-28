@@ -12,6 +12,7 @@ import streamlit as st
 
 from core.csv_reader import CsvReadError, read_csv_file
 from core.data_profiler import profile_dataframe
+from core.evidence_reviewer import review_evidence_traceability
 from core.metadata_validator import validate_metadata
 from core.policy_evidence import build_policy_evidence, build_policy_queries
 from core.quality_checker import run_quality_checks
@@ -219,6 +220,107 @@ def _show_gemini_analysis(
 
         for limitation in limitations:
             st.write(f"- {limitation}")
+
+
+def _show_evidence_review(
+    evidence_review: dict[str, Any],
+) -> None:
+    """Render deterministic evidence traceability review."""
+    if not evidence_review:
+        return
+
+    st.subheader("Review Traceability")
+
+    traceability_score = float(
+        evidence_review.get(
+            "traceability_score",
+            0.0,
+        )
+    )
+    review_status = evidence_review.get(
+        "status",
+        "unknown",
+    )
+
+    metrics = st.columns(3)
+
+    metrics[0].metric(
+        "Traceability score",
+        f"{traceability_score:.2f}",
+    )
+    metrics[1].metric(
+        "Referensi valid",
+        evidence_review.get(
+            "valid_reference_count",
+            0,
+        ),
+    )
+    metrics[2].metric(
+        "Referensi tidak valid",
+        evidence_review.get(
+            "invalid_reference_count",
+            0,
+        ),
+    )
+
+    if review_status == "valid":
+        st.success(
+            "Seluruh referensi Gemini dapat ditelusuri "
+            "ke policy evidence."
+        )
+    elif review_status == "partially_valid":
+        st.warning(
+            "Sebagian referensi Gemini tidak dapat "
+            "divalidasi terhadap policy evidence."
+        )
+    elif review_status == "invalid":
+        st.error(
+            "Referensi Gemini tidak dapat divalidasi "
+            "terhadap policy evidence."
+        )
+    elif review_status == "no_references":
+        st.info(
+            "Gemini tidak menyertakan referensi evidence."
+        )
+    else:
+        st.info(
+            "Status review traceability belum diketahui."
+        )
+
+    invalid_references = evidence_review.get(
+        "invalid_references",
+        [],
+    )
+
+    if invalid_references:
+        st.markdown("### Referensi tidak valid")
+
+        for invalid_reference in invalid_references:
+            chunk_id = invalid_reference.get(
+                "chunk_id",
+                "-",
+            )
+            reason = invalid_reference.get(
+                "reason",
+                "",
+            )
+
+            st.warning(
+                f"{chunk_id} — {reason}"
+            )
+
+    unsupported_sections = evidence_review.get(
+        "unsupported_sections",
+        [],
+    )
+
+    if unsupported_sections:
+        st.markdown(
+            "### Bagian tanpa dukungan evidence"
+        )
+
+        for unsupported_section in unsupported_sections:
+            st.warning(unsupported_section)
 
 
 def main() -> None:
@@ -559,6 +661,18 @@ def main() -> None:
         gemini_analysis
     )
 
+    evidence_review: dict[str, Any] = {}
+
+    if gemini_analysis:
+        evidence_review = review_evidence_traceability(
+            policy_evidence=policy_evidence,
+            gemini_analysis=gemini_analysis,
+        )
+
+        _show_evidence_review(
+            evidence_review
+        )
+
     st.subheader("Laporan JSON")
 
     report = build_report(
@@ -573,6 +687,7 @@ def main() -> None:
         metadata_validation=metadata_validation,
         policy_evidence=policy_evidence,
         gemini_analysis=gemini_analysis,
+        evidence_review=evidence_review,
     )
 
     st.download_button(
