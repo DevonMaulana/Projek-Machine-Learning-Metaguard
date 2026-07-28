@@ -16,6 +16,7 @@ def build_report(
     metadata: dict[str, Any] | None = None,
     metadata_validation: dict[str, Any] | None = None,
     policy_evidence: list[dict[str, Any]] | None = None,
+    gemini_analysis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Combine analysis outputs into a JSON-serializable report."""
     by_severity = score.get("findings_by_severity", {})
@@ -34,6 +35,7 @@ def build_report(
         "metadata": metadata or {},
         "metadata_validation": metadata_validation or {},
         "policy_evidence": policy_evidence or [],
+        "gemini_analysis": gemini_analysis or {},
     }
 
 
@@ -51,7 +53,11 @@ def save_report_json(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2),
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 

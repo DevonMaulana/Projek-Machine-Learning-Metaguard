@@ -17,6 +17,7 @@ from core.policy_evidence import build_policy_evidence, build_policy_queries
 from core.quality_checker import run_quality_checks
 from core.report_builder import build_report
 from core.scoring import calculate_score
+from llm.gemini_client import analyze_with_gemini
 from rag.retriever import retrieve_policy_chunks
 
 
@@ -37,7 +38,9 @@ def _read_uploaded_csv(
         temporary_path.unlink(missing_ok=True)
 
 
-def _show_findings(findings: list[dict[str, Any]]) -> None:
+def _show_findings(
+    findings: list[dict[str, Any]],
+) -> None:
     """Render quality findings grouped by severity."""
     st.subheader("Hasil pemeriksaan kualitas")
 
@@ -106,7 +109,10 @@ def _show_policy_evidence(
             continue
 
         for result in results:
-            source = result.get("source", "Sumber tidak diketahui")
+            source = result.get(
+                "source",
+                "Sumber tidak diketahui",
+            )
             page = result.get("page", "-")
             chunk_id = result.get("chunk_id", "-")
             distance = float(result.get("distance", 0.0))
@@ -122,6 +128,99 @@ def _show_policy_evidence(
                 st.write(text)
 
 
+def _show_gemini_analysis(
+    gemini_analysis: dict[str, Any],
+) -> None:
+    """Render structured Gemini analysis."""
+    if not gemini_analysis:
+        return
+
+    summary = gemini_analysis.get("summary", "")
+
+    if summary:
+        st.markdown("### Ringkasan")
+        st.write(summary)
+
+    metadata_assessment = gemini_analysis.get(
+        "metadata_assessment",
+        [],
+    )
+
+    if metadata_assessment:
+        st.markdown("### Penilaian metadata")
+
+        for item in metadata_assessment:
+            st.write(f"- {item}")
+
+    data_quality_assessment = gemini_analysis.get(
+        "data_quality_assessment",
+        [],
+    )
+
+    if data_quality_assessment:
+        st.markdown("### Penilaian kualitas data")
+
+        for item in data_quality_assessment:
+            st.write(f"- {item}")
+
+    priority_actions = gemini_analysis.get(
+        "priority_actions",
+        [],
+    )
+
+    if priority_actions:
+        st.markdown("### Tindakan prioritas")
+
+        for action in priority_actions:
+            priority = action.get(
+                "priority",
+                "Prioritas",
+            )
+            action_text = action.get(
+                "action",
+                "Tindakan",
+            )
+            reason = action.get(
+                "reason",
+                "",
+            )
+
+            with st.expander(
+                f"{priority} — {action_text}"
+            ):
+                st.write(reason)
+
+    evidence_references = gemini_analysis.get(
+        "evidence_references",
+        [],
+    )
+
+    if evidence_references:
+        st.markdown("### Referensi evidence")
+
+        for reference in evidence_references:
+            source = reference.get("source", "-")
+            page = reference.get("page", "-")
+            chunk_id = reference.get("chunk_id", "-")
+            relevance = reference.get("relevance", "")
+
+            st.write(
+                f"- **{source}**, halaman {page} "
+                f"({chunk_id}) — {relevance}"
+            )
+
+    limitations = gemini_analysis.get(
+        "limitations",
+        [],
+    )
+
+    if limitations:
+        st.markdown("### Keterbatasan")
+
+        for limitation in limitations:
+            st.write(f"- {limitation}")
+
+
 def main() -> None:
     """Render the MetaGuard local dataset analysis workflow."""
     st.set_page_config(
@@ -132,11 +231,14 @@ def main() -> None:
     st.title("MetaGuard")
     st.write(
         "Validasi awal kualitas dataset OPD secara lokal, "
-        "deterministik, dan tanpa AI."
+        "deterministik, dan didukung analisis berbasis evidence."
     )
 
     if "policy_evidence" not in st.session_state:
         st.session_state.policy_evidence = []
+
+    if "gemini_analysis" not in st.session_state:
+        st.session_state.gemini_analysis = {}
 
     if "active_file_signature" not in st.session_state:
         st.session_state.active_file_signature = None
@@ -152,14 +254,19 @@ def main() -> None:
         return
 
     file_bytes = uploaded_file.getvalue()
+
     file_signature = (
         uploaded_file.name,
         len(file_bytes),
     )
 
-    if st.session_state.active_file_signature != file_signature:
+    if (
+        st.session_state.active_file_signature
+        != file_signature
+    ):
         st.session_state.active_file_signature = file_signature
         st.session_state.policy_evidence = []
+        st.session_state.gemini_analysis = {}
 
     st.caption(
         f"File: {uploaded_file.name} · "
@@ -172,7 +279,9 @@ def main() -> None:
         st.error(str(error))
         return
     except (OSError, ValueError) as error:
-        st.error(f"File tidak dapat dibaca: {error}")
+        st.error(
+            f"File tidak dapat dibaca: {error}"
+        )
         return
 
     if dataframe.shape[1] == 0:
@@ -193,6 +302,7 @@ def main() -> None:
     st.subheader("Ringkasan profil")
 
     metrics = st.columns(4)
+
     metrics[0].metric(
         "Jumlah baris",
         profile["row_count"],
@@ -211,8 +321,11 @@ def main() -> None:
     )
 
     st.subheader("Informasi kolom")
+
     st.dataframe(
-        pd.DataFrame(profile["column_details"]),
+        pd.DataFrame(
+            profile["column_details"]
+        ),
         hide_index=True,
         use_container_width=True,
     )
@@ -220,25 +333,47 @@ def main() -> None:
     _show_findings(findings)
 
     st.subheader("Skor kualitas")
+
     st.metric(
         "Score",
         score["score"],
     )
+
     st.write(
         f"Grade: **{score['grade']}** · "
         f"Total temuan: {score['total_findings']}"
     )
-    st.json(score["findings_by_severity"])
+
+    st.json(
+        score["findings_by_severity"]
+    )
 
     st.subheader("Metadata dataset")
 
     with st.form("metadata_form"):
-        title = st.text_input("Judul dataset")
-        description = st.text_area("Deskripsi dataset")
-        producer_opd = st.text_input("OPD produsen data")
-        data_period = st.text_input("Periode data")
-        geographic_scope = st.text_input("Cakupan wilayah")
-        measurement_unit = st.text_input("Satuan pengukuran")
+        title = st.text_input(
+            "Judul dataset"
+        )
+
+        description = st.text_area(
+            "Deskripsi dataset"
+        )
+
+        producer_opd = st.text_input(
+            "OPD produsen data"
+        )
+
+        data_period = st.text_input(
+            "Periode data"
+        )
+
+        geographic_scope = st.text_input(
+            "Cakupan wilayah"
+        )
+
+        measurement_unit = st.text_input(
+            "Satuan pengukuran"
+        )
 
         update_frequency = st.selectbox(
             "Frekuensi pembaruan",
@@ -256,6 +391,7 @@ def main() -> None:
         responsible_unit = st.text_input(
             "Penanggung jawab atau unit pengelola"
         )
+
         publication_purpose = st.text_area(
             "Tujuan publikasi"
         )
@@ -277,7 +413,9 @@ def main() -> None:
         "publication_purpose": publication_purpose,
     }
 
-    metadata_validation = validate_metadata(metadata)
+    metadata_validation = validate_metadata(
+        metadata
+    )
 
     metadata_has_value = any(
         str(value).strip()
@@ -289,11 +427,14 @@ def main() -> None:
             "Skor kelengkapan metadata",
             f"{metadata_validation['completeness_score']:.2f}",
         )
+
         st.write(
             f"Status: **{metadata_validation['status']}**"
         )
 
-        missing_fields = metadata_validation["missing_fields"]
+        missing_fields = metadata_validation[
+            "missing_fields"
+        ]
 
         if missing_fields:
             st.warning(
@@ -305,7 +446,9 @@ def main() -> None:
                 "Seluruh field metadata wajib telah diisi."
             )
 
-        for item in metadata_validation["findings"]:
+        for item in metadata_validation[
+            "findings"
+        ]:
             st.info(
                 f"{item['field']}: "
                 f"{item['issue']} "
@@ -313,9 +456,10 @@ def main() -> None:
             )
 
     st.subheader("Evidence Kebijakan")
+
     st.caption(
-        "Evidence diambil dari dokumen kebijakan lokal yang telah "
-        "diproses melalui knowledge base MetaGuard."
+        "Evidence diambil dari dokumen kebijakan lokal "
+        "yang telah diproses melalui knowledge base MetaGuard."
     )
 
     if st.button(
@@ -338,8 +482,13 @@ def main() -> None:
                         top_k=3,
                     )
                 )
+
+            st.session_state.gemini_analysis = {}
+
         except (OSError, RuntimeError, ValueError):
             st.session_state.policy_evidence = []
+            st.session_state.gemini_analysis = {}
+
             st.error(
                 "Knowledge base belum siap atau retrieval gagal. "
                 "Jalankan `python -m rag.ingest` terlebih dahulu."
@@ -349,7 +498,66 @@ def main() -> None:
         st.session_state.policy_evidence
     )
 
-    _show_policy_evidence(policy_evidence)
+    _show_policy_evidence(
+        policy_evidence
+    )
+
+    st.subheader("Analisis dengan Gemini")
+
+    st.caption(
+        "Gemini menganalisis hasil validasi lokal dan evidence "
+        "kebijakan. Analisis ini bukan keputusan hukum dan tidak "
+        "menggantikan pemeriksaan manusia."
+    )
+
+    if not policy_evidence:
+        st.info(
+            "Cari evidence kebijakan terlebih dahulu sebelum "
+            "menjalankan analisis Gemini."
+        )
+    else:
+        if st.button(
+            "Analisis dengan Gemini",
+            type="primary",
+        ):
+            try:
+                with st.spinner(
+                    "Gemini sedang menganalisis hasil MetaGuard..."
+                ):
+                    st.session_state.gemini_analysis = (
+                        analyze_with_gemini(
+                            profile=profile,
+                            findings=findings,
+                            metadata=metadata,
+                            metadata_validation=metadata_validation,
+                            policy_evidence=policy_evidence,
+                        )
+                    )
+
+            except ValueError as error:
+                st.session_state.gemini_analysis = {}
+                st.warning(str(error))
+
+            except RuntimeError as error:
+                st.session_state.gemini_analysis = {}
+                st.error(str(error))
+
+            except Exception:
+                st.session_state.gemini_analysis = {}
+
+                st.error(
+                    "Analisis Gemini gagal dijalankan. "
+                    "Periksa konfigurasi API, koneksi internet, "
+                    "dan kuota Free Tier."
+                )
+
+    gemini_analysis: dict[str, Any] = (
+        st.session_state.gemini_analysis
+    )
+
+    _show_gemini_analysis(
+        gemini_analysis
+    )
 
     st.subheader("Laporan JSON")
 
@@ -364,6 +572,7 @@ def main() -> None:
         metadata=metadata,
         metadata_validation=metadata_validation,
         policy_evidence=policy_evidence,
+        gemini_analysis=gemini_analysis,
     )
 
     st.download_button(
