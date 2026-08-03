@@ -25,9 +25,6 @@ SEVERITIES = {
 IDENTIFIER_NAMES = {
     "id",
     "identifier",
-    "kode",
-    "code",
-    "uuid",
 }
 
 PERCENTAGE_KEYWORDS = {
@@ -135,13 +132,10 @@ def _is_identifier_column(
         column_name
     )
 
-    parts = set(normalized.split("_"))
-
     return (
         normalized in IDENTIFIER_NAMES
         or normalized.startswith("id_")
         or normalized.endswith("_id")
-        or bool(parts & IDENTIFIER_NAMES)
     )
 
 

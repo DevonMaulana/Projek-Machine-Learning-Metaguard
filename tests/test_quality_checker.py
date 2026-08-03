@@ -428,10 +428,10 @@ def test_duplicate_identifier_is_detected():
     assert "PKM001" in finding["evidence"]
 
 
-def test_identifier_matching_normalizes_case_and_whitespace():
+def test_record_id_matching_normalizes_case_and_whitespace():
     frame = pd.DataFrame(
         {
-            "kode_fasilitas": [
+            "record_id": [
                 "PKM001",
                 " pkm001 ",
                 "PKM002",
@@ -449,6 +449,43 @@ def test_identifier_matching_normalizes_case_and_whitespace():
     )
 
     assert finding["count"] == 2
+
+
+def test_repeated_geographic_and_postal_codes_are_not_identifiers():
+    frame = pd.DataFrame(
+        {
+            "kode_kecamatan": ["KEC01", "KEC01", "KEC02"],
+            "kode_pos": ["40123", "40123", "40124"],
+        }
+    )
+
+    findings = run_quality_checks(frame)
+
+    assert not any(
+        finding["check_id"] == "duplicate_identifier"
+        for finding in findings
+    )
+
+
+def test_identifier_checks_preserve_dataframe_and_json_output():
+    frame = pd.DataFrame(
+        {
+            "id_puskesmas": ["PKM001", "PKM001"],
+            "kode_wilayah": ["W01", "W01"],
+        }
+    )
+    original = frame.copy(deep=True)
+
+    findings = run_quality_checks(frame)
+
+    duplicate_columns = [
+        finding["column"]
+        for finding in findings
+        if finding["check_id"] == "duplicate_identifier"
+    ]
+    assert duplicate_columns == ["id_puskesmas"]
+    pd.testing.assert_frame_equal(frame, original)
+    json.dumps(findings, ensure_ascii=False)
 
 
 def test_iqr_numeric_outlier_is_detected():
