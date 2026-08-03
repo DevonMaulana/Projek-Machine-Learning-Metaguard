@@ -11,7 +11,12 @@ import pandas as pd
 import streamlit as st
 
 from core.analysis_state import build_analysis_fingerprint
-from core.csv_reader import CsvReadError, read_csv_file
+from core.csv_ingestion import (
+    CsvIngestionError,
+    CsvIngestionResult,
+    CsvReadConfig,
+    read_csv_with_diagnostics,
+)
 from core.data_profiler import profile_dataframe
 from core.evidence_reviewer import review_evidence_traceability
 from core.metadata_validator import validate_metadata
@@ -23,19 +28,21 @@ from llm.gemini_client import analyze_with_gemini
 from rag.retriever import retrieve_policy_chunks
 
 
+@st.cache_data(max_entries=5, show_spinner=False)
 def _read_uploaded_csv(
-    uploaded_file: st.runtime.uploaded_file_manager.UploadedFile,
-) -> pd.DataFrame:
-    """Read an uploaded CSV through the shared core CSV reader."""
+    file_bytes: bytes,
+    config: CsvReadConfig,
+) -> CsvIngestionResult:
+    """Read uploaded bytes through structured CSV ingestion."""
     with tempfile.NamedTemporaryFile(
         suffix=".csv",
         delete=False,
     ) as temporary:
-        temporary.write(uploaded_file.getvalue())
+        temporary.write(file_bytes)
         temporary_path = Path(temporary.name)
 
     try:
-        return read_csv_file(temporary_path)
+        return read_csv_with_diagnostics(temporary_path, config)
     finally:
         temporary_path.unlink(missing_ok=True)
 
@@ -384,9 +391,49 @@ def main() -> None:
         f"Ukuran: {len(file_bytes):,} byte"
     )
 
+    with st.expander("Pengaturan parsing CSV"):
+        encoding_choice = st.selectbox(
+            "Encoding",
+            ["Otomatis", "utf-8-sig", "utf-8", "cp1252", "latin-1"],
+        )
+        delimiter_choice = st.selectbox(
+            "Delimiter",
+            ["Otomatis", "Koma (,)", "Titik koma (;)", "Tab", "Pipe (|)"],
+        )
+        quote_character = st.text_input(
+            "Quote character",
+            value='"',
+            max_chars=1,
+        )
+        parsing_mode = st.selectbox(
+            "Penanganan baris malformed",
+            ["strict", "warn"],
+        )
+        analysis_mode = st.selectbox(
+            "Mode analisis",
+            ["exact", "chunked", "sampled"],
+        )
+
+    delimiters = {
+        "Otomatis": None,
+        "Koma (,)": ",",
+        "Titik koma (;)": ";",
+        "Tab": "\t",
+        "Pipe (|)": "|",
+    }
+    ingestion_config = CsvReadConfig(
+        encoding=None if encoding_choice == "Otomatis" else encoding_choice,
+        delimiter=delimiters[delimiter_choice],
+        quote_character=quote_character or '"',
+        parsing_mode=parsing_mode,
+        analysis_mode=analysis_mode,
+    )
+
     try:
-        dataframe = _read_uploaded_csv(uploaded_file)
-    except CsvReadError as error:
+        ingestion_result = _read_uploaded_csv(file_bytes, ingestion_config)
+        dataframe = ingestion_result.dataframe
+        ingestion = ingestion_result.diagnostics
+    except CsvIngestionError as error:
         st.error(str(error))
         return
     except (OSError, ValueError) as error:
@@ -399,11 +446,31 @@ def main() -> None:
         st.error("Dataset tidak memiliki kolom.")
         return
 
+    st.subheader("Ringkasan ingestion")
+    ingestion_metrics = st.columns(4)
+    ingestion_metrics[0].metric("Status", ingestion["status"])
+    ingestion_metrics[1].metric("Encoding", ingestion["encoding"])
+    ingestion_metrics[2].metric("Delimiter", repr(ingestion["delimiter"]))
+    ingestion_metrics[3].metric("Baris malformed", ingestion["malformed_rows"])
+    st.caption(
+        f"Mode: {ingestion['mode']} · Scope: {ingestion['analysis_scope']} · "
+        f"Strategi memori: {ingestion['memory_strategy']} · "
+        f"Baris dimuat: {ingestion['rows_loaded']:,} · "
+        f"Kolom: {ingestion['columns_loaded']:,}"
+    )
+    if ingestion["sampled_rows"]:
+        st.warning(
+            f"Analisis sampled menggunakan {ingestion['sampled_rows']:,} dari "
+            f"{ingestion['total_rows']:,} baris."
+        )
+    for warning in ingestion["warnings"]:
+        st.warning(warning)
+
     st.subheader("Preview dataset")
     st.dataframe(
         dataframe.head(10),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
     profile = profile_dataframe(dataframe)
@@ -438,7 +505,7 @@ def main() -> None:
             profile["column_details"]
         ),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
     _show_findings(findings)
@@ -528,6 +595,13 @@ def main() -> None:
         file_name=uploaded_file.name,
         file_bytes=file_bytes,
         metadata=metadata,
+        ingestion_config={
+            "encoding": ingestion_config.encoding,
+            "delimiter": ingestion_config.delimiter,
+            "quote_character": ingestion_config.quote_character,
+            "parsing_mode": ingestion_config.parsing_mode,
+            "analysis_mode": ingestion_config.analysis_mode,
+        },
     )
 
     previous_fingerprint = (
@@ -680,6 +754,7 @@ def main() -> None:
                             metadata=metadata,
                             metadata_validation=metadata_validation,
                             policy_evidence=policy_evidence,
+                            ingestion=ingestion,
                         )
                     )
 
@@ -735,6 +810,7 @@ def main() -> None:
         policy_evidence=policy_evidence,
         gemini_analysis=gemini_analysis,
         evidence_review=evidence_review,
+        ingestion=ingestion,
     )
 
     st.download_button(

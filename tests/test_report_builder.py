@@ -25,6 +25,7 @@ def test_build_and_save_report(tmp_path) -> None:
     assert report["policy_evidence"] == []
     assert report["gemini_analysis"] == {}
     assert report["evidence_review"] == {}
+    assert report["ingestion"] == {}
 
     json.dumps(report)
 
@@ -364,3 +365,20 @@ def test_complete_report_is_json_safe() -> None:
     assert "policy_evidence" in encoded
     assert "gemini_analysis" in encoded
     assert "evidence_review" in encoded
+
+
+def test_report_contains_ingestion_diagnostics() -> None:
+    ingestion = {
+        "status": "success_with_warnings",
+        "mode": "chunked",
+        "analysis_scope": "full",
+        "rows_loaded": 250000,
+        "warnings": ["Satu baris malformed terdeteksi."],
+    }
+    report = build_report(
+        profile={}, findings=[],
+        score={"score": 100, "findings_by_severity": {}},
+        ingestion=ingestion,
+    )
+    assert report["ingestion"] == ingestion
+    json.dumps(report)

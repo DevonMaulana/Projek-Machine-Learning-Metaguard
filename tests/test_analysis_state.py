@@ -87,3 +87,20 @@ def test_metadata_whitespace_is_normalized() -> None:
     )
 
     assert first == second
+
+
+def test_parsing_configuration_changes_fingerprint() -> None:
+    common = {
+        "file_name": "data.csv",
+        "file_bytes": b"a,b\n1,2\n",
+        "metadata": {"title": "Data"},
+    }
+    comma = build_analysis_fingerprint(
+        **common,
+        ingestion_config={"delimiter": ",", "encoding": "utf-8"},
+    )
+    semicolon = build_analysis_fingerprint(
+        **common,
+        ingestion_config={"delimiter": ";", "encoding": "utf-8"},
+    )
+    assert comma != semicolon

@@ -3,7 +3,8 @@
 from pathlib import Path
 
 import pandas as pd
-from pandas.errors import EmptyDataError, ParserError
+
+from core.csv_ingestion import CsvIngestionError, CsvReadConfig, read_csv_with_diagnostics
 
 
 class CsvReadError(Exception):
@@ -42,12 +43,10 @@ def read_csv_file(
         raise CsvReadError(f"Ekstensi file harus .csv: {path}")
 
     try:
-        return pd.read_csv(path, encoding=encoding, sep=delimiter)
-    except EmptyDataError as exc:
-        raise CsvReadError(f"File CSV kosong: {path}") from exc
-    except ParserError as exc:
-        raise CsvReadError(f"CSV gagal diparsing: {path}") from exc
-    except UnicodeDecodeError as exc:
-        raise CsvReadError(
-            f"Encoding tidak sesuai untuk membaca file CSV: {encoding}"
-        ) from exc
+        result = read_csv_with_diagnostics(
+            path,
+            CsvReadConfig(encoding=encoding, delimiter=delimiter),
+        )
+        return result.dataframe
+    except CsvIngestionError as exc:
+        raise CsvReadError(str(exc)) from exc

@@ -18,6 +18,7 @@ def build_report(
     policy_evidence: list[dict[str, Any]] | None = None,
     gemini_analysis: dict[str, Any] | None = None,
     evidence_review: dict[str, Any] | None = None,
+    ingestion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Combine analysis outputs into a JSON-serializable report."""
     by_severity = score.get(
@@ -45,6 +46,7 @@ def build_report(
         "policy_evidence": policy_evidence or [],
         "gemini_analysis": gemini_analysis or {},
         "evidence_review": evidence_review or {},
+        "ingestion": ingestion or {},
     }
 
 

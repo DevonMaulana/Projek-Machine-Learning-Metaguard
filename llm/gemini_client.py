@@ -46,6 +46,7 @@ def _build_analysis_payload(
     metadata: dict[str, Any],
     metadata_validation: dict[str, Any],
     policy_evidence: list[dict[str, Any]],
+    ingestion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a compact JSON-safe payload for Gemini."""
     return {
@@ -59,6 +60,14 @@ def _build_analysis_payload(
         "metadata": metadata,
         "metadata_validation": metadata_validation,
         "policy_evidence": policy_evidence,
+        "ingestion": {
+            "mode": (ingestion or {}).get("mode", "exact"),
+            "analysis_scope": (ingestion or {}).get("analysis_scope", "full"),
+            "total_rows": (ingestion or {}).get("total_rows"),
+            "rows_loaded": (ingestion or {}).get("rows_loaded"),
+            "sampled_rows": (ingestion or {}).get("sampled_rows", 0),
+            "warnings": (ingestion or {}).get("warnings", []),
+        },
     }
 
 
@@ -68,6 +77,7 @@ def analyze_with_gemini(
     metadata: dict[str, Any],
     metadata_validation: dict[str, Any],
     policy_evidence: list[dict[str, Any]],
+    ingestion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Analyze MetaGuard results using one Gemini API call.
@@ -96,6 +106,7 @@ def analyze_with_gemini(
         metadata=metadata,
         metadata_validation=metadata_validation,
         policy_evidence=policy_evidence,
+        ingestion=ingestion,
     )
 
     instruction = """
@@ -113,6 +124,11 @@ Tugas:
 7. Gunakan Bahasa Indonesia.
 8. Berikan tindakan prioritas yang konkret dan singkat.
 9. Sebutkan keterbatasan analisis bila evidence tidak cukup.
+10. Periksa payload.ingestion. Bila analysis_scope bernilai "sampled",
+    temuan dan profil hanya mewakili baris yang dianalisis, bukan seluruh
+    dataset. Jangan menggeneralisasi angka temuan sebagai hasil exact seluruh
+    dataset; bedakan total_rows dan rows_loaded, serta sebutkan keterbatasan
+    sampling pada summary atau limitations.
 """
 
     client = genai.Client(api_key=api_key)

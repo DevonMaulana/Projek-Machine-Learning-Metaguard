@@ -57,6 +57,58 @@ def test_build_analysis_payload_is_json_safe() -> None:
     assert payload["profile"]["duplicate_rows"] == 1
 
 
+def test_sampled_ingestion_context_is_in_payload() -> None:
+    payload = _build_analysis_payload(
+        profile={"row_count": 50},
+        findings=[],
+        metadata={},
+        metadata_validation={},
+        policy_evidence=[{"query": "metadata", "results": []}],
+        ingestion={
+            "mode": "sampled",
+            "analysis_scope": "sampled",
+            "total_rows": 1000,
+            "rows_loaded": 50,
+            "sampled_rows": 50,
+            "warnings": ["Analisis menggunakan sampel deterministik."],
+        },
+    )
+    assert payload["ingestion"]["analysis_scope"] == "sampled"
+    assert payload["ingestion"]["total_rows"] == 1000
+    assert payload["ingestion"]["rows_loaded"] == 50
+
+
+def test_sampled_prompt_prevents_full_dataset_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return type("Response", (), {"text": '{"summary":"Sampel.","limitations":["Sampel."]}'})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.models = FakeModels()
+
+    monkeypatch.setattr("llm.gemini_client.load_dotenv", lambda: False)
+    monkeypatch.setattr("llm.gemini_client.genai.Client", FakeClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key")
+    monkeypatch.setenv("GEMINI_MODEL", "dummy-model")
+
+    analyze_with_gemini(
+        profile={"row_count": 50}, findings=[], metadata={}, metadata_validation={},
+        policy_evidence=[{"query": "metadata", "results": []}],
+        ingestion={"mode": "sampled", "analysis_scope": "sampled", "total_rows": 1000, "rows_loaded": 50, "sampled_rows": 50, "warnings": []},
+    )
+
+    content = str(captured["contents"])
+    assert 'analysis_scope bernilai "sampled"' in content
+    assert '"total_rows": 1000' in content
+    assert '"rows_loaded": 50' in content
+
+
 def test_gemini_analysis_schema_is_json_safe() -> None:
     result = GeminiAnalysis(
         summary="Dataset memerlukan perbaikan.",
