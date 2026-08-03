@@ -66,6 +66,10 @@ def _build_analysis_payload(
             "total_rows": (ingestion or {}).get("total_rows"),
             "rows_loaded": (ingestion or {}).get("rows_loaded"),
             "sampled_rows": (ingestion or {}).get("sampled_rows", 0),
+            "sample_size_requested": (ingestion or {}).get("sample_size_requested"),
+            "sample_seed": (ingestion or {}).get("sample_seed"),
+            "sampling_method": (ingestion or {}).get("sampling_method"),
+            "sampling_applied": (ingestion or {}).get("sampling_applied", False),
             "warnings": (ingestion or {}).get("warnings", []),
         },
     }
@@ -109,6 +113,16 @@ def analyze_with_gemini(
         ingestion=ingestion,
     )
 
+    sampling_instruction = ""
+    if payload["ingestion"]["analysis_scope"] == "sampled":
+        sampling_instruction = """
+10. Hasil memakai sampled analysis: temuan dan profil hanya mewakili baris
+    yang dianalisis, bukan seluruh dataset. Jangan menggeneralisasi angka
+    temuan sebagai hasil exact seluruh dataset; bedakan total_rows dan
+    rows_loaded, serta sebutkan keterbatasan sampling pada summary atau
+    limitations.
+"""
+
     instruction = """
 Anda adalah analis kualitas data untuk prototipe MetaGuard.
 
@@ -124,12 +138,17 @@ Tugas:
 7. Gunakan Bahasa Indonesia.
 8. Berikan tindakan prioritas yang konkret dan singkat.
 9. Sebutkan keterbatasan analisis bila evidence tidak cukup.
-10. Periksa payload.ingestion. Bila analysis_scope bernilai "sampled",
-    temuan dan profil hanya mewakili baris yang dianalisis, bukan seluruh
-    dataset. Jangan menggeneralisasi angka temuan sebagai hasil exact seluruh
-    dataset; bedakan total_rows dan rows_loaded, serta sebutkan keterbatasan
-    sampling pada summary atau limitations.
-"""
+11. Untuk check_id "duplicate_identifier", count adalah jumlah baris yang
+    terlibat dalam duplikasi, bukan selalu jumlah identifier unik. Evidence
+    hanya contoh yang mungkin dibatasi; jangan menganggapnya daftar lengkap.
+12. Untuk check_id "numeric_outlier", ini adalah Temuan Deterministik:
+    sistem mendeteksi nilai di luar batas IQR. Jangan menyatakan nilainya pasti
+    salah atau melabelinya Temuan Interpretatif; validitasnya perlu verifikasi
+    manusia dan sumber data.
+13. Jangan mengubah count atau percentage, membuat temuan baru, menyebut kolom
+    atau evidence yang tidak ada pada payload, atau memberikan keputusan maupun
+    kesimpulan kepatuhan hukum.
+""" + sampling_instruction
 
     client = genai.Client(api_key=api_key)
 

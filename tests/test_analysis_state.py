@@ -1,4 +1,4 @@
-from core.analysis_state import build_analysis_fingerprint
+from core.analysis_state import build_analysis_fingerprint, reset_analysis_results
 
 
 def test_fingerprint_is_deterministic() -> None:
@@ -104,3 +104,25 @@ def test_parsing_configuration_changes_fingerprint() -> None:
         ingestion_config={"delimiter": ";", "encoding": "utf-8"},
     )
     assert comma != semicolon
+
+
+def test_fingerprint_only_uses_active_chunk_and_sample_settings() -> None:
+    common = {"file_name": "data.csv", "file_bytes": b"id\n1", "metadata": {}}
+    exact_one = build_analysis_fingerprint(**common, ingestion_config={"analysis_mode": "exact", "chunk_size": 1, "sample_size": 1, "sample_seed": 1})
+    exact_two = build_analysis_fingerprint(**common, ingestion_config={"analysis_mode": "exact", "chunk_size": 99, "sample_size": 99, "sample_seed": 99})
+    sampled_one = build_analysis_fingerprint(**common, ingestion_config={"analysis_mode": "sampled", "chunk_size": 1, "sample_size": 10, "sample_seed": 1})
+    sampled_two = build_analysis_fingerprint(**common, ingestion_config={"analysis_mode": "sampled", "chunk_size": 99, "sample_size": 10, "sample_seed": 1})
+    sampled_other_seed = build_analysis_fingerprint(**common, ingestion_config={"analysis_mode": "sampled", "sample_size": 10, "sample_seed": 2})
+    assert exact_one == exact_two
+    assert sampled_one == sampled_two
+    assert sampled_one != sampled_other_seed
+
+
+def test_reset_analysis_results_only_clears_derived_outputs() -> None:
+    state = {"policy_evidence": [{"query": "x"}], "gemini_analysis": {"summary": "x"}, "evidence_review": {"status": "valid"}, "report_payload": {"schema_version": "1.0"}, "other": "keep"}
+    assert reset_analysis_results(state) is True
+    assert state["policy_evidence"] == []
+    assert state["gemini_analysis"] == {}
+    assert state["evidence_review"] == {}
+    assert state["report_payload"] == {}
+    assert state["other"] == "keep"

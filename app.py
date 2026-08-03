@@ -10,11 +10,15 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from core.analysis_state import build_analysis_fingerprint
+from core.analysis_state import (
+    build_analysis_fingerprint,
+    reset_analysis_results,
+)
 from core.csv_ingestion import (
     CsvIngestionError,
     CsvIngestionResult,
     CsvReadConfig,
+    build_csv_read_config,
     read_csv_with_diagnostics,
 )
 from core.data_profiler import profile_dataframe
@@ -350,6 +354,12 @@ def main() -> None:
     if "gemini_analysis" not in st.session_state:
         st.session_state.gemini_analysis = {}
 
+    if "evidence_review" not in st.session_state:
+        st.session_state.evidence_review = {}
+
+    if "report_payload" not in st.session_state:
+        st.session_state.report_payload = {}
+
     if "active_file_signature" not in st.session_state:
         st.session_state.active_file_signature = None
 
@@ -381,8 +391,7 @@ def main() -> None:
         != file_signature
     ):
         st.session_state.active_file_signature = file_signature
-        st.session_state.policy_evidence = []
-        st.session_state.gemini_analysis = {}
+        reset_analysis_results(st.session_state)
         st.session_state.analysis_fingerprint = None
         st.session_state.analysis_state_reset = False
 
@@ -392,6 +401,7 @@ def main() -> None:
     )
 
     with st.expander("Pengaturan parsing CSV"):
+        default_csv_config = CsvReadConfig()
         encoding_choice = st.selectbox(
             "Encoding",
             ["Otomatis", "utf-8-sig", "utf-8", "cp1252", "latin-1"],
@@ -413,6 +423,39 @@ def main() -> None:
             "Mode analisis",
             ["exact", "chunked", "sampled"],
         )
+        chunk_size: int | None = None
+        sample_size: int | None = None
+        sample_seed: int | None = None
+        if analysis_mode == "chunked":
+            chunk_size = int(st.number_input(
+                "Chunk size",
+                min_value=500,
+                max_value=100_000,
+                value=default_csv_config.chunk_size,
+                step=500,
+                help=(
+                    "Jumlah baris yang dibaca pada setiap chunk. Pada versi ini "
+                    "seluruh chunk masih digabung menjadi satu DataFrame untuk "
+                    "pemeriksaan global."
+                ),
+            ))
+        elif analysis_mode == "sampled":
+            sample_size = int(st.number_input(
+                "Sample size",
+                min_value=100,
+                max_value=1_000_000,
+                value=default_csv_config.sample_size,
+                step=100,
+                help="Jumlah maksimum baris yang dipilih menggunakan reservoir sampling deterministik.",
+            ))
+            sample_seed = int(st.number_input(
+                "Sample seed",
+                min_value=0,
+                max_value=2_147_483_647,
+                value=default_csv_config.sample_seed,
+                step=1,
+                help="Seed memastikan file dan konfigurasi yang sama menghasilkan sampel yang sama.",
+            ))
 
     delimiters = {
         "Otomatis": None,
@@ -421,12 +464,16 @@ def main() -> None:
         "Tab": "\t",
         "Pipe (|)": "|",
     }
-    ingestion_config = CsvReadConfig(
+    ingestion_config = build_csv_read_config(
         encoding=None if encoding_choice == "Otomatis" else encoding_choice,
         delimiter=delimiters[delimiter_choice],
         quote_character=quote_character or '"',
         parsing_mode=parsing_mode,
         analysis_mode=analysis_mode,
+        chunk_size=chunk_size,
+        sample_size=sample_size,
+        sample_seed=sample_seed,
+        base_config=default_csv_config,
     )
 
     try:
@@ -452,17 +499,29 @@ def main() -> None:
     ingestion_metrics[1].metric("Encoding", ingestion["encoding"])
     ingestion_metrics[2].metric("Delimiter", repr(ingestion["delimiter"]))
     ingestion_metrics[3].metric("Baris malformed", ingestion["malformed_rows"])
-    st.caption(
+    ingestion_caption = (
         f"Mode: {ingestion['mode']} · Scope: {ingestion['analysis_scope']} · "
         f"Strategi memori: {ingestion['memory_strategy']} · "
         f"Baris dimuat: {ingestion['rows_loaded']:,} · "
         f"Kolom: {ingestion['columns_loaded']:,}"
     )
-    if ingestion["sampled_rows"]:
-        st.warning(
-            f"Analisis sampled menggunakan {ingestion['sampled_rows']:,} dari "
-            f"{ingestion['total_rows']:,} baris."
-        )
+    if ingestion["mode"] == "chunked":
+        ingestion_caption += f" · Chunk size: {ingestion['chunk_size_requested']:,}"
+    st.caption(ingestion_caption)
+    if ingestion["mode"] == "sampled":
+        if ingestion["sampling_applied"]:
+            st.warning(
+                f"Analisis sampled menggunakan {ingestion['sampled_rows']:,} dari "
+                f"{ingestion['total_rows']:,} baris · Sample size diminta: "
+                f"{ingestion['sample_size_requested']:,} · Seed: "
+                f"{ingestion['sample_seed']:,}."
+            )
+        else:
+            st.info(
+                f"Mode sampled mencakup seluruh {ingestion['total_rows']:,} baris · "
+                f"Sample size diminta: {ingestion['sample_size_requested']:,} · "
+                f"Seed: {ingestion['sample_seed']:,}."
+            )
     for warning in ingestion["warnings"]:
         st.warning(warning)
 
@@ -601,6 +660,11 @@ def main() -> None:
             "quote_character": ingestion_config.quote_character,
             "parsing_mode": ingestion_config.parsing_mode,
             "analysis_mode": ingestion_config.analysis_mode,
+            "header_row": ingestion_config.header_row,
+            "missing_value_tokens": ingestion_config.missing_value_tokens,
+            "chunk_size": ingestion_config.chunk_size,
+            "sample_size": ingestion_config.sample_size,
+            "sample_seed": ingestion_config.sample_seed,
         },
     )
 
@@ -612,13 +676,7 @@ def main() -> None:
         previous_fingerprint is not None
         and previous_fingerprint != current_fingerprint
     ):
-        had_previous_results = bool(
-            st.session_state.policy_evidence
-            or st.session_state.gemini_analysis
-        )
-
-        st.session_state.policy_evidence = []
-        st.session_state.gemini_analysis = {}
+        had_previous_results = reset_analysis_results(st.session_state)
         st.session_state.analysis_state_reset = (
             had_previous_results
         )
@@ -790,6 +848,7 @@ def main() -> None:
             policy_evidence=policy_evidence,
             gemini_analysis=gemini_analysis,
         )
+        st.session_state.evidence_review = evidence_review
 
         _show_evidence_review(
             evidence_review
@@ -812,6 +871,7 @@ def main() -> None:
         evidence_review=evidence_review,
         ingestion=ingestion,
     )
+    st.session_state.report_payload = report
 
     st.download_button(
         "Unduh laporan JSON",

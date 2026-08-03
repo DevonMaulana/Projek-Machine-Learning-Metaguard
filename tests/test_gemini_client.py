@@ -70,12 +70,18 @@ def test_sampled_ingestion_context_is_in_payload() -> None:
             "total_rows": 1000,
             "rows_loaded": 50,
             "sampled_rows": 50,
+            "sample_size_requested": 50,
+            "sample_seed": 42,
+            "sampling_method": "reservoir_sampling",
+            "sampling_applied": True,
             "warnings": ["Analisis menggunakan sampel deterministik."],
         },
     )
     assert payload["ingestion"]["analysis_scope"] == "sampled"
     assert payload["ingestion"]["total_rows"] == 1000
     assert payload["ingestion"]["rows_loaded"] == 50
+    assert payload["ingestion"]["sample_size_requested"] == 50
+    assert payload["ingestion"]["sampling_applied"] is True
 
 
 def test_sampled_prompt_prevents_full_dataset_claims(
@@ -100,13 +106,65 @@ def test_sampled_prompt_prevents_full_dataset_claims(
     analyze_with_gemini(
         profile={"row_count": 50}, findings=[], metadata={}, metadata_validation={},
         policy_evidence=[{"query": "metadata", "results": []}],
-        ingestion={"mode": "sampled", "analysis_scope": "sampled", "total_rows": 1000, "rows_loaded": 50, "sampled_rows": 50, "warnings": []},
+        ingestion={"mode": "sampled", "analysis_scope": "sampled", "total_rows": 1000, "rows_loaded": 50, "sampled_rows": 50, "sample_size_requested": 50, "sample_seed": 42, "warnings": []},
     )
 
     content = str(captured["contents"])
-    assert 'analysis_scope bernilai "sampled"' in content
+    assert "Hasil memakai sampled analysis" in content
     assert '"total_rows": 1000' in content
     assert '"rows_loaded": 50' in content
+    assert '"sample_size_requested": 50' in content
+
+
+def test_prompt_preserves_deterministic_finding_terminology(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return type("Response", (), {"text": '{"summary":"ok"}'})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.models = FakeModels()
+
+    monkeypatch.setattr("llm.gemini_client.load_dotenv", lambda: False)
+    monkeypatch.setattr("llm.gemini_client.genai.Client", FakeClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key")
+    monkeypatch.setenv("GEMINI_MODEL", "dummy-model")
+    analyze_with_gemini({}, [], {}, {}, [{"query": "x", "results": []}])
+    content = str(captured["contents"])
+    assert "jumlah baris yang" in content
+    assert "di luar batas IQR" in content
+    assert "Jangan mengubah count atau percentage" in content
+    assert "kesimpulan kepatuhan hukum" in content
+
+
+def test_full_scope_prompt_does_not_require_sampling_limitations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeModels:
+        def generate_content(self, **kwargs):
+            captured.update(kwargs)
+            return type("Response", (), {"text": '{"summary":"ok"}'})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.models = FakeModels()
+
+    monkeypatch.setattr("llm.gemini_client.load_dotenv", lambda: False)
+    monkeypatch.setattr("llm.gemini_client.genai.Client", FakeClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key")
+    monkeypatch.setenv("GEMINI_MODEL", "dummy-model")
+    analyze_with_gemini(
+        {}, [], {}, {}, [{"query": "x", "results": []}],
+        ingestion={"mode": "sampled", "analysis_scope": "full", "total_rows": 3, "rows_loaded": 3, "sampled_rows": 3, "sampling_applied": False},
+    )
+    content = str(captured["contents"])
+    assert "Hasil memakai sampled analysis" not in content
+    assert "keterbatasan sampling" not in content
 
 
 def test_gemini_analysis_schema_is_json_safe() -> None:

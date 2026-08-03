@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import re
 from datetime import datetime
 from typing import Any
@@ -14,6 +13,7 @@ from pandas.api.types import (
     is_object_dtype,
     is_string_dtype,
 )
+from core.evidence_sanitizer import sanitize_evidence
 
 SEVERITIES = {
     "info",
@@ -41,32 +41,6 @@ DATE_KEYWORDS = {
 }
 
 
-def _json_safe_value(value: Any) -> Any:
-    """Convert scalar evidence values into JSON-safe Python values."""
-    if value is None:
-        return None
-
-    if isinstance(value, bool):
-        return value
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, float):
-        if math.isnan(value) or math.isinf(value):
-            return str(value)
-
-        return value
-
-    if hasattr(value, "item"):
-        try:
-            return _json_safe_value(value.item())
-        except (TypeError, ValueError):
-            pass
-
-    return str(value)
-
-
 def _finding(
     check_id: str,
     title: str,
@@ -84,10 +58,7 @@ def _finding(
             f"Severity tidak dikenal: {severity}"
         )
 
-    safe_evidence = [
-        _json_safe_value(value)
-        for value in evidence[:5]
-    ]
+    safe_evidence = sanitize_evidence(evidence)
 
     return {
         "check_id": check_id,

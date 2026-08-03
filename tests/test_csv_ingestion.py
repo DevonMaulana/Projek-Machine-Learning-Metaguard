@@ -7,6 +7,7 @@ import pytest
 from core.csv_ingestion import (
     CsvIngestionError,
     CsvReadConfig,
+    build_csv_read_config,
     preflight_csv,
     read_csv_with_diagnostics,
 )
@@ -110,6 +111,7 @@ def test_header_only_many_rows_and_source_unchanged(tmp_path: Path):
     assert result.dataframe.shape == (20_000, 2)
     assert result.diagnostics["analysis_scope"] == "full"
     assert result.diagnostics["memory_strategy"] == "combined_dataframe"
+    assert result.diagnostics["chunk_size_requested"] == 1000
     assert any("digabung ke memori" in warning for warning in result.diagnostics["warnings"])
     assert large.read_bytes() == before
 
@@ -124,6 +126,64 @@ def test_sampling_is_deterministic_and_disclosed(tmp_path: Path):
     assert first.diagnostics["sampled_rows"] == 50
     assert first.diagnostics["total_rows"] == 1000
     assert first.diagnostics["analysis_scope"] == "sampled"
+    assert first.diagnostics["sampling_applied"] is True
+    assert first.diagnostics["sampling_method"] == "reservoir_sampling"
+    assert first.diagnostics["sample_size_requested"] == 50
+    assert first.diagnostics["sample_seed"] == 7
+
+
+def test_sampling_larger_than_dataset_loads_all_rows_with_warning(tmp_path: Path):
+    path = tmp_path / "all_rows.csv"
+    path.write_text("id\n1\n2\n3\n", encoding="utf-8")
+    result = read_csv_with_diagnostics(
+        path,
+        CsvReadConfig(analysis_mode="sampled", sample_size=10, sample_seed=99),
+    )
+    assert result.diagnostics["sample_size_requested"] == 10
+    assert result.diagnostics["sampled_rows"] == 3
+    assert result.diagnostics["rows_loaded"] == 3
+    assert result.diagnostics["total_rows"] == 3
+    assert result.diagnostics["analysis_scope"] == "full"
+    assert result.diagnostics["sampling_applied"] is False
+    assert any("Mode sampled dipilih" in item for item in result.diagnostics["warnings"])
+    assert not any("Analisis menggunakan sampel deterministik" in item for item in result.diagnostics["warnings"])
+
+
+def test_sampling_size_equal_to_dataset_uses_full_scope(tmp_path: Path):
+    path = tmp_path / "equal_rows.csv"
+    path.write_text("id,value\n1,A\n2,B\n3,C\n", encoding="utf-8")
+    sampled = read_csv_with_diagnostics(
+        path, CsvReadConfig(analysis_mode="sampled", sample_size=3)
+    )
+    exact = read_csv_with_diagnostics(path, CsvReadConfig(analysis_mode="exact"))
+    assert sampled.diagnostics["analysis_scope"] == "full"
+    assert sampled.diagnostics["sampling_applied"] is False
+    assert sampled.diagnostics["rows_loaded"] == sampled.diagnostics["total_rows"] == 3
+    assert sampled.diagnostics["sampled_rows"] == 3
+    pd.testing.assert_frame_equal(sampled.dataframe, exact.dataframe)
+    assert run_quality_checks(sampled.dataframe) == run_quality_checks(exact.dataframe)
+
+
+def test_sampling_with_different_seed_can_select_different_rows(tmp_path: Path):
+    path = tmp_path / "seed.csv"
+    path.write_text("id\n" + "".join(f"{value}\n" for value in range(100)), encoding="utf-8")
+    first = read_csv_with_diagnostics(path, CsvReadConfig(analysis_mode="sampled", sample_size=10, sample_seed=1))
+    second = read_csv_with_diagnostics(path, CsvReadConfig(analysis_mode="sampled", sample_size=10, sample_seed=2))
+    assert first.dataframe["id"].tolist() != second.dataframe["id"].tolist()
+
+
+def test_build_reader_config_preserves_defaults_and_accepts_ui_values():
+    defaults = CsvReadConfig()
+    config = build_csv_read_config(
+        analysis_mode="chunked", chunk_size=2_000, base_config=defaults
+    )
+    assert config.chunk_size == 2_000
+    assert config.sample_size == defaults.sample_size
+    sampled = build_csv_read_config(
+        analysis_mode="sampled", sample_size=500, sample_seed=5, base_config=defaults
+    )
+    assert sampled.sample_size == 500
+    assert sampled.sample_seed == 5
 
 
 def test_duplicate_identifier_across_parser_chunks_is_detected(tmp_path: Path):
@@ -134,6 +194,16 @@ def test_duplicate_identifier_across_parser_chunks_is_detected(tmp_path: Path):
     )
     findings = run_quality_checks(ingestion.dataframe)
     assert any(item["check_id"] == "duplicate_identifier" for item in findings)
+
+
+def test_chunked_result_matches_exact_result(tmp_path: Path):
+    path = tmp_path / "equivalent.csv"
+    path.write_text("id,value\n" + "".join(f"{value},{value % 3}\n" for value in range(20)), encoding="utf-8")
+    exact = read_csv_with_diagnostics(path, CsvReadConfig(analysis_mode="exact"))
+    chunked = read_csv_with_diagnostics(
+        path, CsvReadConfig(analysis_mode="chunked", chunk_size=5)
+    )
+    pd.testing.assert_frame_equal(exact.dataframe, chunked.dataframe)
 
 
 def test_wrong_delimiter_warns_and_diagnostics_are_json_safe(tmp_path: Path):

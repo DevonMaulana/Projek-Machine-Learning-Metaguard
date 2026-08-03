@@ -382,3 +382,28 @@ def test_report_contains_ingestion_diagnostics() -> None:
     )
     assert report["ingestion"] == ingestion
     json.dumps(report)
+
+
+def test_report_preserves_chunked_and_sampled_configuration() -> None:
+    sampled = {
+        "mode": "sampled",
+        "analysis_scope": "sampled",
+        "memory_strategy": "reservoir_sample",
+        "sampling_method": "reservoir_sampling",
+        "sampling_applied": True,
+        "sample_size_requested": 10_000,
+        "sample_seed": 42,
+        "sampled_rows": 10_000,
+        "rows_loaded": 10_000,
+        "total_rows": 12_000,
+    }
+    chunked = {
+        "mode": "chunked",
+        "analysis_scope": "full",
+        "memory_strategy": "combined_dataframe",
+        "chunk_size_requested": 2_000,
+    }
+    for ingestion in (sampled, chunked):
+        report = build_report({}, [], {"score": 100, "findings_by_severity": {}}, ingestion=ingestion)
+        assert report["ingestion"] == ingestion
+        json.dumps(report)

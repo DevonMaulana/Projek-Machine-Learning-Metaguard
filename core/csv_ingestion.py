@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -50,6 +50,35 @@ class CsvReadConfig:
             raise ValueError("Quote character harus tepat satu karakter.")
         if self.preview_row_limit < 1 or self.chunk_size < 1 or self.sample_size < 1:
             raise ValueError("Batas preview, chunk, dan sample harus minimal 1.")
+
+
+def build_csv_read_config(
+    *,
+    encoding: str | None = None,
+    delimiter: str | None = None,
+    quote_character: str | None = None,
+    parsing_mode: Literal["strict", "warn"] | None = None,
+    analysis_mode: Literal["exact", "chunked", "sampled"] | None = None,
+    chunk_size: int | None = None,
+    sample_size: int | None = None,
+    sample_seed: int | None = None,
+    base_config: CsvReadConfig | None = None,
+) -> CsvReadConfig:
+    """Build reader settings while retaining defaults from one base config."""
+    defaults = base_config or CsvReadConfig()
+    return CsvReadConfig(
+        encoding=encoding,
+        delimiter=delimiter,
+        quote_character=quote_character or defaults.quote_character,
+        header_row=defaults.header_row,
+        missing_value_tokens=defaults.missing_value_tokens,
+        parsing_mode=parsing_mode or defaults.parsing_mode,
+        analysis_mode=analysis_mode or defaults.analysis_mode,
+        preview_row_limit=defaults.preview_row_limit,
+        chunk_size=int(chunk_size if chunk_size is not None else defaults.chunk_size),
+        sample_size=int(sample_size if sample_size is not None else defaults.sample_size),
+        sample_seed=int(sample_seed if sample_seed is not None else defaults.sample_seed),
+    )
 
 
 @dataclass
@@ -236,8 +265,17 @@ def read_csv_with_diagnostics(
     warnings = list(preflight["warnings"])
     if rows_skipped:
         warnings.append(f"{rows_skipped} baris malformed dilewati sesuai parsing_mode='warn'.")
-    if settings.analysis_mode == "sampled":
+    sampling_applied = (
+        settings.analysis_mode == "sampled"
+        and settings.sample_size < total_rows
+    )
+    if sampling_applied:
         warnings.append("Analisis menggunakan sampel deterministik, bukan seluruh baris.")
+    elif settings.analysis_mode == "sampled":
+        warnings.append(
+            "Mode sampled dipilih, tetapi ukuran sampel mencakup seluruh "
+            "dataset; seluruh baris dianalisis."
+        )
     if settings.analysis_mode == "chunked":
         warnings.append(
             "File dibaca bertahap, tetapi seluruh chunk masih digabung ke memori "
@@ -247,7 +285,7 @@ def read_csv_with_diagnostics(
     diagnostics = {
         "status": status,
         "mode": settings.analysis_mode,
-        "analysis_scope": "sampled" if settings.analysis_mode == "sampled" else "full",
+        "analysis_scope": "sampled" if sampling_applied else "full",
         "memory_strategy": (
             "combined_dataframe"
             if settings.analysis_mode == "chunked"
@@ -261,6 +299,7 @@ def read_csv_with_diagnostics(
         "rows_loaded": len(dataframe),
         "total_rows": total_rows,
         "sampled_rows": len(dataframe) if settings.analysis_mode == "sampled" else 0,
+        "sampling_applied": sampling_applied,
         "columns_loaded": dataframe.shape[1],
         "malformed_rows": preflight["malformed_rows"],
         "malformed_examples": preflight["malformed_examples"],
@@ -271,4 +310,14 @@ def read_csv_with_diagnostics(
         "parsed_headers": parsed_headers,
         "warnings": warnings,
     }
+    if settings.analysis_mode == "chunked":
+        diagnostics["chunk_size_requested"] = settings.chunk_size
+    if settings.analysis_mode == "sampled":
+        diagnostics.update(
+            {
+                "sampling_method": "reservoir_sampling",
+                "sample_size_requested": settings.sample_size,
+                "sample_seed": settings.sample_seed,
+            }
+        )
     return CsvIngestionResult(dataframe=dataframe, diagnostics=diagnostics, preflight=preflight)
