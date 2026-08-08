@@ -40,6 +40,14 @@ DATE_KEYWORDS = {
     "tgl",
 }
 
+COORDINATE_COLUMN_NAMES = {
+    "latitude",
+    "longitude",
+    "lat",
+    "lon",
+    "lng",
+}
+
 
 def _finding(
     check_id: str,
@@ -135,6 +143,20 @@ def _is_date_column(
     return any(
         keyword in normalized
         for keyword in DATE_KEYWORDS
+    )
+
+
+def _is_coordinate_column(
+    column_name: str,
+) -> bool:
+    """Return whether a column is an explicitly named coordinate field.
+
+    Negative values are valid for latitude and longitude, so these exact
+    normalized names are excluded from the generic negative-number rule.
+    """
+    return (
+        _normalized_column_name(column_name)
+        in COORDINATE_COLUMN_NAMES
     )
 
 
@@ -487,7 +509,7 @@ def _check_numeric_column(
         numeric < 0
     ]
 
-    if len(negative):
+    if len(negative) and not _is_coordinate_column(column_name):
         findings.append(
             _finding(
                 check_id="negative_numeric",

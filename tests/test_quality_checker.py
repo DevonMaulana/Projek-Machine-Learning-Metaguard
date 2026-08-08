@@ -260,6 +260,41 @@ def test_negative_numeric_values_are_detected():
     assert finding["evidence"] == [-1]
 
 
+def test_negative_coordinates_are_excluded_from_generic_negative_check():
+    findings = run_quality_checks(
+        pd.DataFrame(
+            {
+                "latitude": [-7.3, -7.4, -7.5, -7.6, -7.7],
+                "longitude": [-110.1, -110.2, -110.3, -110.4, -110.5],
+                "jumlah_perawat": [2, 3, 4, 5, 6],
+            }
+        )
+    )
+
+    negative_columns = {
+        finding["column"]
+        for finding in findings
+        if finding["check_id"] == "negative_numeric"
+    }
+
+    assert "latitude" not in negative_columns
+    assert "longitude" not in negative_columns
+
+
+def test_ordinary_negative_numeric_values_remain_detected():
+    findings = run_quality_checks(
+        pd.DataFrame(
+            {
+                "jumlah_perawat": [2, -2, 4, 5, 6],
+            }
+        )
+    )
+
+    finding = _find_by_id(findings, "negative_numeric")
+    assert finding["column"] == "jumlah_perawat"
+    assert finding["count"] == 1
+
+
 def test_percentage_out_of_range_is_detected():
     frame = pd.DataFrame(
         {

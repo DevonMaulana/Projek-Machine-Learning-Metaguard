@@ -68,8 +68,8 @@ def test_geographic_administrative_levels_are_not_collapsed() -> None:
     cases = (
         ("Kota Semarang", "kota", ["Semarang"], False),
         ("Kabupaten Semarang", "kabupaten", ["Semarang"], False),
-        ("Kota Semarang", "kabupaten", ["Semarang"], True),
-        ("Kabupaten Temanggung", "kecamatan", ["Temanggung"], True),
+        ("Kota Semarang", "kabupaten", ["Semarang"], False),
+        ("Kabupaten Temanggung", "kecamatan", ["Temanggung"], False),
     )
     for scope, column, values, expects_finding in cases:
         result = run_contextual_validation(
@@ -78,6 +78,38 @@ def test_geographic_administrative_levels_are_not_collapsed() -> None:
         )
         geographic_findings = _findings(result, "metadata_geographic_scope_vs_dataset")
         assert bool(geographic_findings) is expects_finding
+
+
+def test_geographic_scope_skips_lower_level_names_and_codes() -> None:
+    metadata = _metadata(data_period="", geographic_scope="Kabupaten Temanggung")
+    for dataframe in (
+        pd.DataFrame({"kecamatan": ["Kedu", "Parakan"]}),
+        pd.DataFrame({"kode_kecamatan": ["KC001", "KC002"]}),
+    ):
+        result = run_contextual_validation(dataframe, metadata)
+        assert not _findings(result, "metadata_geographic_scope_vs_dataset")
+        assert result["status"] == "not_evaluable"
+
+
+def test_geographic_scope_compares_same_level_columns_only() -> None:
+    metadata = _metadata(data_period="", geographic_scope="Kabupaten Temanggung")
+
+    matching = run_contextual_validation(
+        pd.DataFrame({"kabupaten": [" Kabupaten Temanggung "]}),
+        metadata,
+    )
+    different_regency = run_contextual_validation(
+        pd.DataFrame({"kabupaten": ["Kabupaten Semarang"]}),
+        metadata,
+    )
+    different_level = run_contextual_validation(
+        pd.DataFrame({"kabupaten": ["Kota Semarang"]}),
+        metadata,
+    )
+
+    assert not _findings(matching, "metadata_geographic_scope_vs_dataset")
+    assert _findings(different_regency, "metadata_geographic_scope_vs_dataset")
+    assert _findings(different_level, "metadata_geographic_scope_vs_dataset")
 
 
 def test_geographic_structured_normalization_keeps_level_and_handles_whitespace() -> None:

@@ -143,13 +143,39 @@ def _column_administrative_level(column_name: object) -> str | None:
     return None
 
 
-def _geographic_column_positions(dataframe: pd.DataFrame) -> list[int]:
-    """Return conservative geographic candidate columns without level filtering."""
-    return [
-        index
-        for index, name in enumerate(dataframe.columns)
-        if any(keyword in _normalized_name(name) for keyword in GEOGRAPHIC_COLUMN_KEYWORDS)
-    ]
+def _is_geographic_code_column(column_name: object) -> bool:
+    """Return whether a column contains geographic codes rather than names."""
+    normalized = _normalized_name(column_name)
+    return normalized.startswith("kode_") and any(
+        keyword in normalized
+        for keyword in (*ADMINISTRATIVE_LEVELS, "wilayah")
+    )
+
+
+def _geographic_column_positions(
+    dataframe: pd.DataFrame,
+    expected_level: str,
+) -> list[int]:
+    """Return name columns comparable with the metadata administrative level.
+
+    Lower-level administrative names and code columns are deliberately skipped:
+    direct string comparison cannot prove geographic hierarchy membership.
+    A generic ``wilayah`` column remains eligible only when its values declare a
+    compatible level explicitly.
+    """
+    positions: list[int] = []
+    for index, name in enumerate(dataframe.columns):
+        normalized = _normalized_name(name)
+        if _is_geographic_code_column(name):
+            continue
+
+        column_level = _column_administrative_level(name)
+        if column_level == expected_level:
+            positions.append(index)
+        elif column_level is None and "wilayah" in normalized:
+            positions.append(index)
+
+    return positions
 
 
 def _geographic_consistency(dataframe: pd.DataFrame, metadata: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
@@ -159,13 +185,22 @@ def _geographic_consistency(dataframe: pd.DataFrame, metadata: dict[str, Any]) -
         return [], 0
     findings: list[dict[str, Any]] = []
     evaluated = 0
-    for position in _geographic_column_positions(dataframe):
+    for position in _geographic_column_positions(
+        dataframe,
+        expected["level"],
+    ):
         column = str(dataframe.columns[position])
         inferred_level = _column_administrative_level(column)
         regions = dataframe.iloc[:, position].map(
             lambda value: _administrative_region(value, inferred_level=inferred_level)
         )
         regions = regions[regions.notna()]
+        if inferred_level is None:
+            regions = regions[
+                regions.map(
+                    lambda region: region["level"] == expected["level"]
+                )
+            ]
         if not len(regions):
             continue
         evaluated += 1
