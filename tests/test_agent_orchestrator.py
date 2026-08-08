@@ -49,7 +49,11 @@ def test_metadata_not_validated_then_incomplete_then_complete() -> None:
         _quality_ready_state(metadata_validation_completed=True, metadata_status="Belum Lengkap")
     )
     complete = plan_next_action(
-        _quality_ready_state(metadata_validation_completed=True, metadata_status="Lengkap")
+        _quality_ready_state(
+            metadata_validation_completed=True,
+            metadata_status="Lengkap",
+            contextual_validation_completed=True,
+        )
     )
     assert not_validated.next_action is AgentAction.VALIDATE_METADATA
     assert incomplete.next_action is AgentAction.NONE
@@ -59,7 +63,11 @@ def test_metadata_not_validated_then_incomplete_then_complete() -> None:
 
 
 def test_evidence_empty_blocks_gemini_and_evidence_available_unlocks_it() -> None:
-    base = _quality_ready_state(metadata_validation_completed=True, metadata_status="Lengkap")
+    base = _quality_ready_state(
+        metadata_validation_completed=True,
+        metadata_status="Lengkap",
+        contextual_validation_completed=True,
+    )
     empty = plan_next_action(AgentState(**{**base.to_dict(), "evidence_retrieval_completed": True}))
     ready = plan_next_action(
         AgentState(**{**base.to_dict(), "evidence_retrieval_completed": True, "evidence_count": 1})
@@ -79,6 +87,7 @@ def test_traceability_report_and_complete_transitions() -> None:
         evidence_retrieval_completed=True,
         evidence_count=1,
         gemini_analysis_completed=True,
+        contextual_validation_completed=True,
     )
     traceability = plan_next_action(base)
     report = plan_next_action(AgentState(**{**base.to_dict(), "traceability_review_completed": True, "traceability_status": "valid"}))

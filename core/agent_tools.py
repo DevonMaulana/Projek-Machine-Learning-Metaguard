@@ -8,6 +8,7 @@ from typing import Any, Callable, Mapping
 import pandas as pd
 
 from core.agent_models import AgentAction, AgentStage
+from core.contextual_validation import run_contextual_validation
 from core.data_profiler import profile_dataframe
 from core.evidence_reviewer import review_evidence_traceability
 from core.metadata_validator import validate_metadata
@@ -32,6 +33,8 @@ class AgentExecutionContext:
     score: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     metadata_validation: dict[str, Any] = field(default_factory=dict)
+    contextual_validation: dict[str, Any] = field(default_factory=dict)
+    contextual_profile: str = "healthcare"
     policy_evidence: list[dict[str, Any]] = field(default_factory=list)
     gemini_analysis: dict[str, Any] = field(default_factory=dict)
     evidence_review: dict[str, Any] = field(default_factory=dict)
@@ -69,6 +72,18 @@ def _validate_metadata(context: AgentExecutionContext) -> dict[str, Any]:
     return validate_metadata(context.metadata)
 
 
+def _run_contextual_validation(context: AgentExecutionContext) -> dict[str, Any]:
+    """Run controlled local consistency validation without modifying data."""
+    if context.dataframe is None:
+        raise ValueError("DataFrame belum tersedia untuk validasi kontekstual.")
+    return run_contextual_validation(
+        context.dataframe,
+        context.metadata,
+        profile=context.contextual_profile,
+        ingestion=context.ingestion,
+    )
+
+
 def _retrieve_policy_evidence(context: AgentExecutionContext) -> list[dict[str, Any]]:
     """Build deterministic policy queries and retrieve their evidence."""
     queries = build_policy_queries(context.metadata_validation, context.findings)
@@ -104,6 +119,7 @@ def _build_report(context: AgentExecutionContext) -> dict[str, Any]:
         source=context.source,
         metadata=context.metadata,
         metadata_validation=context.metadata_validation,
+        contextual_validation=context.contextual_validation,
         policy_evidence=context.policy_evidence,
         gemini_analysis=context.gemini_analysis,
         evidence_review=context.evidence_review,
@@ -129,6 +145,14 @@ def build_tool_registry() -> Mapping[AgentAction, ToolDefinition]:
             allowed_stages=(AgentStage.METADATA_REQUIRED,),
             requires_human_approval=False,
             handler=_validate_metadata,
+        ),
+        ToolDefinition(
+            name="run_contextual_validation",
+            description="Validate metadata context and fixed cross-column relationships.",
+            action=AgentAction.RUN_CONTEXTUAL_VALIDATION,
+            allowed_stages=(AgentStage.CONTEXTUAL_VALIDATION_REQUIRED,),
+            requires_human_approval=False,
+            handler=_run_contextual_validation,
         ),
         ToolDefinition(
             name="retrieve_policy_evidence",
@@ -164,4 +188,3 @@ def build_tool_registry() -> Mapping[AgentAction, ToolDefinition]:
         ),
     )
     return {definition.action: definition for definition in definitions}
-

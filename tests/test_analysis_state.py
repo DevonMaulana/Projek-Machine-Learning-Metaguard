@@ -119,7 +119,7 @@ def test_fingerprint_only_uses_active_chunk_and_sample_settings() -> None:
 
 
 def test_reset_analysis_results_only_clears_derived_outputs() -> None:
-    state = {"policy_evidence": [{"query": "x"}], "policy_evidence_retrieval_completed": True, "gemini_analysis": {"summary": "x"}, "evidence_review": {"status": "valid"}, "report_payload": {"schema_version": "1.0"}, "metadata_validation_completed": True, "agent_state": {"stage": "COMPLETE"}, "agent_decision": {"action": "NONE"}, "agent_audit": [{"step": 1}], "other": "keep"}
+    state = {"policy_evidence": [{"query": "x"}], "policy_evidence_retrieval_completed": True, "gemini_analysis": {"summary": "x"}, "evidence_review": {"status": "valid"}, "report_payload": {"schema_version": "1.0"}, "metadata_validation_completed": True, "contextual_validation_completed": True, "contextual_validation": {"finding_count": 1}, "agent_state": {"stage": "COMPLETE"}, "agent_decision": {"action": "NONE"}, "agent_audit": [{"step": 1}], "other": "keep"}
     assert reset_analysis_results(state) is True
     assert state["policy_evidence"] == []
     assert state["gemini_analysis"] == {}
@@ -127,6 +127,8 @@ def test_reset_analysis_results_only_clears_derived_outputs() -> None:
     assert state["report_payload"] == {}
     assert state["policy_evidence_retrieval_completed"] is False
     assert state["metadata_validation_completed"] is False
+    assert state["contextual_validation_completed"] is False
+    assert state["contextual_validation"] == {}
     assert state["agent_state"] is None
     assert state["agent_decision"] is None
     assert state["agent_audit"] == []

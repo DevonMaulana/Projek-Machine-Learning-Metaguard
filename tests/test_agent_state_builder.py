@@ -51,6 +51,8 @@ def test_metadata_and_retrieval_state_distinguish_not_run_and_empty() -> None:
         "score": {},
         "metadata_validation": {"status": "Lengkap"},
         "metadata_validation_completed": True,
+        "contextual_validation": {"finding_count": 0},
+        "contextual_validation_completed": True,
     }
     never = build_agent_state(**common)
     empty = build_agent_state(**common, policy_evidence_retrieval_completed=True)
@@ -65,6 +67,21 @@ def test_metadata_and_retrieval_state_distinguish_not_run_and_empty() -> None:
     assert available.evidence_count == 1
 
 
+def test_contextual_state_is_separate_from_metadata_completeness() -> None:
+    pending = build_agent_state(
+        fingerprint="x", ingestion={"status": "success"}, profile={}, findings=[], score={},
+        metadata_validation={"status": "Lengkap"}, metadata_validation_completed=True,
+    )
+    reviewed = build_agent_state(
+        fingerprint="x", ingestion={"status": "success"}, profile={}, findings=[], score={},
+        metadata_validation={"status": "Lengkap"}, metadata_validation_completed=True,
+        contextual_validation={"finding_count": 2}, contextual_validation_completed=True,
+    )
+    assert plan_next_action(pending).current_stage is AgentStage.CONTEXTUAL_VALIDATION_REQUIRED
+    assert reviewed.contextual_finding_count == 2
+    assert reviewed.contextual_requires_human_review is True
+
+
 def test_gemini_traceability_report_and_scope_modes_are_mapped() -> None:
     for scope in ("full", "sampled"):
         state = build_agent_state(
@@ -73,6 +90,8 @@ def test_gemini_traceability_report_and_scope_modes_are_mapped() -> None:
             profile={}, findings=[], score={},
             metadata_validation={"status": "Lengkap"},
             metadata_validation_completed=True,
+            contextual_validation={"finding_count": 1},
+            contextual_validation_completed=True,
             policy_evidence_retrieval_completed=True,
             policy_evidence=[{"results": [{"chunk_id": "one"}]}],
             gemini_analysis={"summary": "Ada"},
@@ -83,6 +102,7 @@ def test_gemini_traceability_report_and_scope_modes_are_mapped() -> None:
         assert state.gemini_analysis_completed is True
         assert state.traceability_review_completed is True
         assert state.traceability_status == "partially_valid"
+        assert state.contextual_requires_human_review is True
         assert state.report_completed is True
 
 

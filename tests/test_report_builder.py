@@ -26,6 +26,7 @@ def test_build_and_save_report(tmp_path) -> None:
     assert report["gemini_analysis"] == {}
     assert report["evidence_review"] == {}
     assert report["ingestion"] == {}
+    assert report["contextual_validation"] == {}
 
     json.dumps(report)
 
@@ -382,6 +383,33 @@ def test_report_contains_ingestion_diagnostics() -> None:
     )
     assert report["ingestion"] == ingestion
     json.dumps(report)
+
+
+def test_report_contains_contextual_validation() -> None:
+    contextual = {
+        "status": "potential_inconsistency",
+        "finding_count": 1,
+        "findings": [{"check_id": "internet_status_vs_bandwidth"}],
+    }
+    report = build_report({}, [], {"score": 100, "findings_by_severity": {}}, contextual_validation=contextual)
+    assert report["schema_version"] == "1.0"
+    assert report["contextual_validation"] == contextual
+    json.dumps(report)
+
+
+def test_report_preserves_contextual_sampling_context() -> None:
+    contextual = {
+        "status": "potential_inconsistency",
+        "analysis_scope": "sampled",
+        "rows_evaluated": 2_000,
+        "total_rows": 12_000,
+        "finding_count": 1,
+        "findings": [{"affected_rows": 3}],
+    }
+    report = build_report({}, [], {"score": 100, "findings_by_severity": {}}, contextual_validation=contextual)
+    assert report["contextual_validation"]["analysis_scope"] == "sampled"
+    assert report["contextual_validation"]["rows_evaluated"] == 2_000
+    assert report["contextual_validation"]["findings"][0]["affected_rows"] == 3
 
 
 def test_report_preserves_chunked_and_sampled_configuration() -> None:

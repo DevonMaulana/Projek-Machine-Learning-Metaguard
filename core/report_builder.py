@@ -15,6 +15,7 @@ def build_report(
     source: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     metadata_validation: dict[str, Any] | None = None,
+    contextual_validation: dict[str, Any] | None = None,
     policy_evidence: list[dict[str, Any]] | None = None,
     gemini_analysis: dict[str, Any] | None = None,
     evidence_review: dict[str, Any] | None = None,
@@ -43,6 +44,7 @@ def build_report(
         "metadata_validation": (
             metadata_validation or {}
         ),
+        "contextual_validation": contextual_validation or {},
         "policy_evidence": policy_evidence or [],
         "gemini_analysis": gemini_analysis or {},
         "evidence_review": evidence_review or {},

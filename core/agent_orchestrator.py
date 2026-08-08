@@ -63,6 +63,12 @@ def plan_next_action(state: AgentState) -> AgentDecision:
             "Pengguna perlu melengkapi metadata sebelum retrieval evidence.",
             True,
         )
+    if not state.contextual_validation_completed:
+        return AgentDecision(
+            AgentStage.CONTEXTUAL_VALIDATION_REQUIRED,
+            AgentAction.RUN_CONTEXTUAL_VALIDATION,
+            "Metadata lengkap, tetapi validasi kontekstual deterministik belum dijalankan.",
+        )
     if not state.evidence_retrieval_completed:
         return AgentDecision(
             AgentStage.EVIDENCE_REQUIRED,

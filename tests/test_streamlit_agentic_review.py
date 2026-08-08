@@ -9,6 +9,7 @@ def test_agentic_review_renders_without_csv_or_external_services() -> None:
 
     assert not app.exception
     assert "Agentic Review" in [item.value for item in app.subheader]
+    assert "Validasi Kontekstual" in [item.value for item in app.subheader]
     content = [item.value for item in app.markdown]
     assert any("Current stage" in item for item in content)
     assert any("Recommended next action" in item for item in content)

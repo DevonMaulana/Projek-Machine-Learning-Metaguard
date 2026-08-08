@@ -28,6 +28,8 @@ def _metadata_complete_inputs(**changes: object) -> dict[str, object]:
     values = _quality_ready_inputs(
         metadata_validation={"status": "Lengkap"},
         metadata_validation_completed=True,
+        contextual_validation={"finding_count": 0},
+        contextual_validation_completed=True,
     )
     values.update(changes)
     return values
@@ -62,6 +64,28 @@ def test_acceptance_metadata_and_retrieval_transitions() -> None:
     assert empty_retrieval.current_stage is AgentStage.EVIDENCE_REQUIRED
     assert empty_retrieval.next_action is AgentAction.NONE
     assert empty_retrieval.requires_human_action is True
+
+
+def test_contextual_validation_is_required_before_evidence_and_findings_do_not_block() -> None:
+    pending = plan_next_action(
+        build_agent_state(
+            **_quality_ready_inputs(
+                metadata_validation={"status": "Lengkap"},
+                metadata_validation_completed=True,
+            )
+        )
+    )
+    completed = plan_next_action(
+        build_agent_state(
+            **_metadata_complete_inputs(
+                contextual_validation={"finding_count": 2},
+                contextual_validation_completed=True,
+            )
+        )
+    )
+    assert pending.current_stage is AgentStage.CONTEXTUAL_VALIDATION_REQUIRED
+    assert pending.next_action is AgentAction.RUN_CONTEXTUAL_VALIDATION
+    assert completed.current_stage is AgentStage.EVIDENCE_REQUIRED
 
 
 def test_acceptance_evidence_to_gemini_traceability_and_report() -> None:

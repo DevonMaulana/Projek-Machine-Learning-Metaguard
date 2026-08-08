@@ -25,6 +25,7 @@ from core.csv_ingestion import (
     build_csv_read_config,
     read_csv_with_diagnostics,
 )
+from core.contextual_validation import run_contextual_validation
 from core.data_profiler import profile_dataframe
 from core.metadata_validator import validate_metadata
 from core.policy_evidence import build_policy_evidence, build_policy_queries
@@ -368,6 +369,50 @@ def _show_agentic_review(
                 st.caption(f"Keterangan: {event.error}")
 
 
+def _show_contextual_validation(
+    validation: dict[str, Any],
+    *,
+    completed: bool,
+) -> None:
+    """Render compact, human-reviewable deterministic contextual findings."""
+    st.subheader("Validasi Kontekstual")
+    if not completed:
+        st.info("Validasi kontekstual akan dijalankan setelah metadata divalidasi.")
+        return
+
+    status = validation.get("status", "not_evaluable")
+    count = int(validation.get("finding_count", 0))
+    labels = {
+        "consistent": "Konsisten",
+        "potential_inconsistency": "Perlu Verifikasi",
+        "not_evaluable": "Belum dapat dievaluasi",
+    }
+    st.write(f"Status: **{labels.get(status, status)}**")
+    st.metric("Jumlah temuan kontekstual", count)
+    if not count:
+        st.info("Tidak ada potensi inkonsistensi dari rule kontekstual yang dapat dievaluasi.")
+        return
+
+    for finding in validation.get("findings", []):
+        title = finding.get("title", "Temuan kontekstual")
+        with st.expander(title):
+            st.write(f"Severity: **{finding.get('severity', 'medium')}**")
+            affected = finding.get("affected_rows")
+            percentage = finding.get("percentage")
+            if affected is not None:
+                suffix = f" ({float(percentage or 0):.2f}%)"
+                if validation.get("analysis_scope") == "sampled":
+                    st.write(
+                        "Baris terdampak pada sampel: "
+                        f"{affected} dari {validation.get('rows_evaluated', 0):,} "
+                        f"baris yang dianalisis ({validation.get('total_rows', 0):,} total){suffix}"
+                    )
+                else:
+                    st.write(f"Baris terdampak: {affected}{suffix}")
+            st.write(finding.get("description", ""))
+            st.caption(f"Rekomendasi: {finding.get('recommendation', '')}")
+
+
 def _next_agent_step(audit: list[AgentAuditEvent]) -> int:
     """Return the next monotonic audit step for the active session."""
     return audit[-1].step + 1 if audit else 1
@@ -394,6 +439,12 @@ def main() -> None:
 
     if "metadata_validation_completed" not in st.session_state:
         st.session_state.metadata_validation_completed = False
+
+    if "contextual_validation_completed" not in st.session_state:
+        st.session_state.contextual_validation_completed = False
+
+    if "contextual_validation" not in st.session_state:
+        st.session_state.contextual_validation = {}
 
     if "gemini_analysis" not in st.session_state:
         st.session_state.gemini_analysis = {}
@@ -434,6 +485,7 @@ def main() -> None:
             fingerprint=None,
         )
         _show_agentic_review(decision, st.session_state.agent_audit)
+        _show_contextual_validation({}, completed=False)
         st.info("Unggah file CSV untuk memulai analisis.")
         return
 
@@ -780,6 +832,21 @@ def main() -> None:
             reason="Pengguna menjalankan validasi metadata.",
             outcome="success",
         )
+        st.session_state.contextual_validation = run_contextual_validation(
+            dataframe,
+            metadata,
+            profile="healthcare",
+            ingestion=ingestion,
+        )
+        st.session_state.contextual_validation_completed = True
+        st.session_state.agent_audit = append_audit_event(
+            st.session_state.agent_audit,
+            fingerprint=current_fingerprint,
+            stage=AgentStage.CONTEXTUAL_VALIDATION_REQUIRED,
+            action=AgentAction.RUN_CONTEXTUAL_VALIDATION,
+            reason="Validasi kontekstual deterministik dijalankan setelah metadata divalidasi.",
+            outcome="success",
+        )
 
     metadata_has_value = any(
         str(value).strip()
@@ -819,6 +886,11 @@ def main() -> None:
                 f"{item['recommendation']}"
             )
 
+    _show_contextual_validation(
+        st.session_state.contextual_validation,
+        completed=st.session_state.contextual_validation_completed,
+    )
+
     agent_state, agent_decision = refresh_agent_review(
         st.session_state,
         fingerprint=current_fingerprint,
@@ -828,6 +900,8 @@ def main() -> None:
         score=score,
         metadata_validation=metadata_validation,
         metadata_validation_completed=st.session_state.metadata_validation_completed,
+        contextual_validation=st.session_state.contextual_validation,
+        contextual_validation_completed=st.session_state.contextual_validation_completed,
         policy_evidence=st.session_state.policy_evidence,
         policy_evidence_retrieval_completed=(
             st.session_state.policy_evidence_retrieval_completed
@@ -912,6 +986,8 @@ def main() -> None:
         score=score,
         metadata_validation=metadata_validation,
         metadata_validation_completed=st.session_state.metadata_validation_completed,
+        contextual_validation=st.session_state.contextual_validation,
+        contextual_validation_completed=st.session_state.contextual_validation_completed,
         policy_evidence=policy_evidence,
         policy_evidence_retrieval_completed=(
             st.session_state.policy_evidence_retrieval_completed
@@ -1002,6 +1078,8 @@ def main() -> None:
             score=score,
             metadata_validation=metadata_validation,
             metadata_validation_completed=st.session_state.metadata_validation_completed,
+            contextual_validation=st.session_state.contextual_validation,
+            contextual_validation_completed=st.session_state.contextual_validation_completed,
             policy_evidence=policy_evidence,
             policy_evidence_retrieval_completed=(
                 st.session_state.policy_evidence_retrieval_completed
@@ -1047,6 +1125,7 @@ def main() -> None:
         },
         metadata=metadata,
         metadata_validation=metadata_validation,
+        contextual_validation=st.session_state.contextual_validation,
         policy_evidence=policy_evidence,
         gemini_analysis=gemini_analysis,
         evidence_review=evidence_review,
@@ -1087,6 +1166,8 @@ def main() -> None:
         score=score,
         metadata_validation=metadata_validation,
         metadata_validation_completed=st.session_state.metadata_validation_completed,
+        contextual_validation=st.session_state.contextual_validation,
+        contextual_validation_completed=st.session_state.contextual_validation_completed,
         policy_evidence=st.session_state.policy_evidence,
         policy_evidence_retrieval_completed=(
             st.session_state.policy_evidence_retrieval_completed
@@ -1103,6 +1184,8 @@ def main() -> None:
             "Traceability telah ditinjau, tetapi statusnya "
             f"`{final_agent_state.traceability_status}`. Periksa hasil review sebelum menggunakan laporan."
         )
+    if final_agent_state.contextual_requires_human_review:
+        st.warning("Temuan kontekstual memerlukan verifikasi manusia atau domain.")
     _show_agentic_review(final_agent_decision, st.session_state.agent_audit)
 
 

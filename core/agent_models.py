@@ -14,6 +14,7 @@ class AgentStage(str, Enum):
     INGESTION_REQUIRED = "INGESTION_REQUIRED"
     QUALITY_REQUIRED = "QUALITY_REQUIRED"
     METADATA_REQUIRED = "METADATA_REQUIRED"
+    CONTEXTUAL_VALIDATION_REQUIRED = "CONTEXTUAL_VALIDATION_REQUIRED"
     EVIDENCE_REQUIRED = "EVIDENCE_REQUIRED"
     ANALYSIS_READY = "ANALYSIS_READY"
     TRACEABILITY_REQUIRED = "TRACEABILITY_REQUIRED"
@@ -27,6 +28,7 @@ class AgentAction(str, Enum):
 
     RUN_QUALITY_PIPELINE = "RUN_QUALITY_PIPELINE"
     VALIDATE_METADATA = "VALIDATE_METADATA"
+    RUN_CONTEXTUAL_VALIDATION = "RUN_CONTEXTUAL_VALIDATION"
     RETRIEVE_POLICY_EVIDENCE = "RETRIEVE_POLICY_EVIDENCE"
     RUN_GEMINI_ANALYSIS = "RUN_GEMINI_ANALYSIS"
     REVIEW_TRACEABILITY = "REVIEW_TRACEABILITY"
@@ -49,6 +51,9 @@ class AgentState:
     score_completed: bool = False
     metadata_validation_completed: bool = False
     metadata_status: str | None = None
+    contextual_validation_completed: bool = False
+    contextual_finding_count: int = 0
+    contextual_requires_human_review: bool = False
     evidence_retrieval_completed: bool = False
     evidence_count: int = 0
     gemini_analysis_completed: bool = False
@@ -146,4 +151,3 @@ class AgentExecutionResult:
     output: Any = None
     error: str | None = None
     audit_event: AgentAuditEvent | None = None
-

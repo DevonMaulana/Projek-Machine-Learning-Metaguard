@@ -27,8 +27,9 @@ def _state(**changes: object) -> AgentState:
 def test_static_registry_has_expected_tools_and_no_unknown_tool() -> None:
     registry = build_tool_registry()
     assert set(registry) == {
-        AgentAction.RUN_QUALITY_PIPELINE,
-        AgentAction.VALIDATE_METADATA,
+            AgentAction.RUN_QUALITY_PIPELINE,
+            AgentAction.VALIDATE_METADATA,
+            AgentAction.RUN_CONTEXTUAL_VALIDATION,
         AgentAction.RETRIEVE_POLICY_EVIDENCE,
         AgentAction.RUN_GEMINI_ANALYSIS,
         AgentAction.REVIEW_TRACEABILITY,
@@ -45,6 +46,24 @@ def test_quality_execution_reuses_pipeline_and_creates_audit_event() -> None:
     assert result.output["score"]["total_findings"] >= 0
     assert result.audit_event is not None
     assert result.audit_event.step == 3
+
+
+def test_contextual_execution_uses_registered_deterministic_tool() -> None:
+    decision = AgentDecision(
+        AgentStage.CONTEXTUAL_VALIDATION_REQUIRED,
+        AgentAction.RUN_CONTEXTUAL_VALIDATION,
+        "Konteks belum diperiksa.",
+    )
+    result = execute_decision(
+        decision,
+        _state(),
+        AgentExecutionContext(
+            dataframe=pd.DataFrame({"tempat_tidur_terisi": [2], "kapasitas_rawat_inap": [1]}),
+            metadata={"data_period": "", "geographic_scope": ""},
+        ),
+    )
+    assert result.success is True
+    assert result.output["finding_count"] == 1
 
 
 def test_wrong_stage_and_no_action_are_rejected() -> None:
