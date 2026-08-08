@@ -14,6 +14,10 @@ from core.analysis_state import (
     build_analysis_fingerprint,
     reset_analysis_results,
 )
+from core.agent_models import AgentAction, AgentAuditEvent, AgentDecision, AgentStage
+from core.agent_orchestrator import execute_decision
+from core.agent_state_builder import append_audit_event, refresh_agent_review
+from core.agent_tools import AgentExecutionContext
 from core.csv_ingestion import (
     CsvIngestionError,
     CsvIngestionResult,
@@ -22,13 +26,11 @@ from core.csv_ingestion import (
     read_csv_with_diagnostics,
 )
 from core.data_profiler import profile_dataframe
-from core.evidence_reviewer import review_evidence_traceability
 from core.metadata_validator import validate_metadata
 from core.policy_evidence import build_policy_evidence, build_policy_queries
 from core.quality_checker import run_quality_checks
 from core.report_builder import build_report
 from core.scoring import calculate_score
-from llm.gemini_client import analyze_with_gemini
 from rag.retriever import retrieve_policy_chunks
 
 
@@ -335,6 +337,42 @@ def _show_evidence_review(
             st.warning(unsupported_section)
 
 
+def _show_agentic_review(
+    decision: AgentDecision,
+    audit: list[AgentAuditEvent],
+) -> None:
+    """Render the lightweight, state-aware agent recommendation."""
+    st.subheader("Agentic Review")
+    with st.container(border=True):
+        st.write(f"**Current stage:** `{decision.current_stage.value}`")
+        st.write(f"**Recommended next action:** `{decision.next_action.value}`")
+        st.write(f"**Reason:** {decision.decision_reason}")
+        if decision.blocking_condition:
+            st.warning(f"Blocking condition: {decision.blocking_condition}")
+        else:
+            st.write("**Blocking condition:** Tidak ada.")
+        approval = "Diperlukan" if decision.requires_human_action else "Tidak diperlukan"
+        st.write(f"**Human action required:** {approval}")
+
+    with st.expander("Agent Decision Log"):
+        if not audit:
+            st.info("Belum ada decision atau action yang dicatat.")
+            return
+        for event in audit:
+            st.write(
+                f"Langkah {event.step} · `{event.stage.value}` · "
+                f"`{event.action.value}` · {event.outcome}"
+            )
+            st.caption(event.reason)
+            if event.error:
+                st.caption(f"Keterangan: {event.error}")
+
+
+def _next_agent_step(audit: list[AgentAuditEvent]) -> int:
+    """Return the next monotonic audit step for the active session."""
+    return audit[-1].step + 1 if audit else 1
+
+
 def main() -> None:
     """Render the MetaGuard local dataset analysis workflow."""
     st.set_page_config(
@@ -350,6 +388,12 @@ def main() -> None:
 
     if "policy_evidence" not in st.session_state:
         st.session_state.policy_evidence = []
+
+    if "policy_evidence_retrieval_completed" not in st.session_state:
+        st.session_state.policy_evidence_retrieval_completed = False
+
+    if "metadata_validation_completed" not in st.session_state:
+        st.session_state.metadata_validation_completed = False
 
     if "gemini_analysis" not in st.session_state:
         st.session_state.gemini_analysis = {}
@@ -369,6 +413,15 @@ def main() -> None:
     if "analysis_state_reset" not in st.session_state:
         st.session_state.analysis_state_reset = False
 
+    if "agent_state" not in st.session_state:
+        st.session_state.agent_state = None
+
+    if "agent_decision" not in st.session_state:
+        st.session_state.agent_decision = None
+
+    if "agent_audit" not in st.session_state:
+        st.session_state.agent_audit = []
+
     uploaded_file = st.file_uploader(
         "Unggah satu file CSV",
         type=["csv"],
@@ -376,6 +429,11 @@ def main() -> None:
     )
 
     if uploaded_file is None:
+        _, decision = refresh_agent_review(
+            st.session_state,
+            fingerprint=None,
+        )
+        _show_agentic_review(decision, st.session_state.agent_audit)
         st.info("Unggah file CSV untuk memulai analisis.")
         return
 
@@ -481,9 +539,23 @@ def main() -> None:
         dataframe = ingestion_result.dataframe
         ingestion = ingestion_result.diagnostics
     except CsvIngestionError as error:
+        _, decision = refresh_agent_review(
+            st.session_state,
+            fingerprint=None,
+            ingestion=error.diagnostics,
+            error_message=str(error),
+        )
+        _show_agentic_review(decision, st.session_state.agent_audit)
         st.error(str(error))
         return
     except (OSError, ValueError) as error:
+        _, decision = refresh_agent_review(
+            st.session_state,
+            fingerprint=None,
+            ingestion={"status": "failed"},
+            error_message=str(error),
+        )
+        _show_agentic_review(decision, st.session_state.agent_audit)
         st.error(
             f"File tidak dapat dibaca: {error}"
         )
@@ -698,6 +770,17 @@ def main() -> None:
         metadata
     )
 
+    if submitted:
+        st.session_state.metadata_validation_completed = True
+        st.session_state.agent_audit = append_audit_event(
+            st.session_state.agent_audit,
+            fingerprint=current_fingerprint,
+            stage=AgentStage.METADATA_REQUIRED,
+            action=AgentAction.VALIDATE_METADATA,
+            reason="Pengguna menjalankan validasi metadata.",
+            outcome="success",
+        )
+
     metadata_has_value = any(
         str(value).strip()
         for value in metadata.values()
@@ -736,6 +819,24 @@ def main() -> None:
                 f"{item['recommendation']}"
             )
 
+    agent_state, agent_decision = refresh_agent_review(
+        st.session_state,
+        fingerprint=current_fingerprint,
+        ingestion=ingestion,
+        profile=profile,
+        findings=findings,
+        score=score,
+        metadata_validation=metadata_validation,
+        metadata_validation_completed=st.session_state.metadata_validation_completed,
+        policy_evidence=st.session_state.policy_evidence,
+        policy_evidence_retrieval_completed=(
+            st.session_state.policy_evidence_retrieval_completed
+        ),
+        gemini_analysis=st.session_state.gemini_analysis,
+        evidence_review=st.session_state.evidence_review,
+        report_payload=st.session_state.report_payload,
+    )
+
     st.subheader("Evidence Kebijakan")
 
     st.caption(
@@ -765,10 +866,33 @@ def main() -> None:
                 )
 
             st.session_state.gemini_analysis = {}
+            st.session_state.evidence_review = {}
+            st.session_state.report_payload = {}
+            st.session_state.policy_evidence_retrieval_completed = True
+            st.session_state.agent_audit = append_audit_event(
+                st.session_state.agent_audit,
+                fingerprint=current_fingerprint,
+                stage=AgentStage.EVIDENCE_REQUIRED,
+                action=AgentAction.RETRIEVE_POLICY_EVIDENCE,
+                reason="Pengguna menjalankan retrieval policy evidence.",
+                outcome="success",
+            )
 
-        except (OSError, RuntimeError, ValueError):
+        except (OSError, RuntimeError, ValueError) as error:
             st.session_state.policy_evidence = []
             st.session_state.gemini_analysis = {}
+            st.session_state.evidence_review = {}
+            st.session_state.report_payload = {}
+            st.session_state.policy_evidence_retrieval_completed = False
+            st.session_state.agent_audit = append_audit_event(
+                st.session_state.agent_audit,
+                fingerprint=current_fingerprint,
+                stage=AgentStage.EVIDENCE_REQUIRED,
+                action=AgentAction.RETRIEVE_POLICY_EVIDENCE,
+                reason="Retrieval policy evidence gagal dijalankan.",
+                outcome="failed",
+                error=str(error)[:300],
+            )
 
             st.error(
                 "Knowledge base belum siap atau retrieval gagal. "
@@ -777,6 +901,24 @@ def main() -> None:
 
     policy_evidence: list[dict[str, Any]] = (
         st.session_state.policy_evidence
+    )
+
+    agent_state, agent_decision = refresh_agent_review(
+        st.session_state,
+        fingerprint=current_fingerprint,
+        ingestion=ingestion,
+        profile=profile,
+        findings=findings,
+        score=score,
+        metadata_validation=metadata_validation,
+        metadata_validation_completed=st.session_state.metadata_validation_completed,
+        policy_evidence=policy_evidence,
+        policy_evidence_retrieval_completed=(
+            st.session_state.policy_evidence_retrieval_completed
+        ),
+        gemini_analysis=st.session_state.gemini_analysis,
+        evidence_review=st.session_state.evidence_review,
+        report_payload=st.session_state.report_payload,
     )
 
     _show_policy_evidence(
@@ -791,47 +933,54 @@ def main() -> None:
         "menggantikan pemeriksaan manusia."
     )
 
-    if not policy_evidence:
+    gemini_allowed = (
+        agent_decision.current_stage is AgentStage.ANALYSIS_READY
+        and agent_decision.next_action is AgentAction.RUN_GEMINI_ANALYSIS
+        and agent_state.evidence_count > 0
+    )
+
+    if not gemini_allowed:
         st.info(
-            "Cari evidence kebijakan terlebih dahulu sebelum "
-            "menjalankan analisis Gemini."
+            agent_decision.blocking_condition
+            or "Lengkapi tahap yang direkomendasikan agent sebelum menjalankan Gemini."
         )
-    else:
-        if st.button(
-            "Analisis dengan Gemini",
-            type="primary",
-        ):
-            try:
-                with st.spinner(
-                    "Gemini sedang menganalisis hasil MetaGuard..."
-                ):
-                    st.session_state.gemini_analysis = (
-                        analyze_with_gemini(
-                            profile=profile,
-                            findings=findings,
-                            metadata=metadata,
-                            metadata_validation=metadata_validation,
-                            policy_evidence=policy_evidence,
-                            ingestion=ingestion,
-                        )
-                    )
-
-            except ValueError as error:
-                st.session_state.gemini_analysis = {}
-                st.warning(str(error))
-
-            except RuntimeError as error:
-                st.session_state.gemini_analysis = {}
-                st.error(str(error))
-
-            except Exception:
-                st.session_state.gemini_analysis = {}
-
-                st.error(
-                    "Analisis Gemini gagal dijalankan. "
-                    "Periksa konfigurasi API, koneksi internet, "
-                    "dan kuota Free Tier."
-                )
+    if st.button(
+        "Analisis dengan Gemini",
+        type="primary",
+        disabled=not gemini_allowed,
+    ):
+        with st.spinner("Gemini sedang menganalisis hasil MetaGuard..."):
+            execution = execute_decision(
+                agent_decision,
+                agent_state,
+                AgentExecutionContext(
+                    ingestion=ingestion,
+                    profile=profile,
+                    findings=findings,
+                    metadata=metadata,
+                    metadata_validation=metadata_validation,
+                    policy_evidence=policy_evidence,
+                ),
+                approved=True,
+                step=_next_agent_step(st.session_state.agent_audit),
+            )
+        if execution.audit_event is not None:
+            st.session_state.agent_audit = [
+                *st.session_state.agent_audit,
+                execution.audit_event,
+            ]
+        if execution.success:
+            st.session_state.gemini_analysis = execution.output
+            st.session_state.evidence_review = {}
+            st.session_state.report_payload = {}
+        else:
+            st.session_state.gemini_analysis = {}
+            st.session_state.evidence_review = {}
+            st.session_state.report_payload = {}
+            st.error(
+                execution.error
+                or "Analisis Gemini gagal dijalankan. Periksa konfigurasi API, koneksi internet, dan kuota Free Tier."
+            )
 
     gemini_analysis: dict[str, Any] = (
         st.session_state.gemini_analysis
@@ -841,18 +990,50 @@ def main() -> None:
         gemini_analysis
     )
 
-    evidence_review: dict[str, Any] = {}
+    evidence_review: dict[str, Any] = st.session_state.evidence_review
 
-    if gemini_analysis:
-        evidence_review = review_evidence_traceability(
+    if gemini_analysis and not evidence_review:
+        trace_state, trace_decision = refresh_agent_review(
+            st.session_state,
+            fingerprint=current_fingerprint,
+            ingestion=ingestion,
+            profile=profile,
+            findings=findings,
+            score=score,
+            metadata_validation=metadata_validation,
+            metadata_validation_completed=st.session_state.metadata_validation_completed,
             policy_evidence=policy_evidence,
+            policy_evidence_retrieval_completed=(
+                st.session_state.policy_evidence_retrieval_completed
+            ),
             gemini_analysis=gemini_analysis,
+            evidence_review=evidence_review,
+            report_payload=st.session_state.report_payload,
         )
-        st.session_state.evidence_review = evidence_review
+        if st.button("Jalankan review traceability", type="secondary"):
+            execution = execute_decision(
+                trace_decision,
+                trace_state,
+                AgentExecutionContext(
+                    policy_evidence=policy_evidence,
+                    gemini_analysis=gemini_analysis,
+                ),
+                step=_next_agent_step(st.session_state.agent_audit),
+            )
+            if execution.audit_event is not None:
+                st.session_state.agent_audit = [
+                    *st.session_state.agent_audit,
+                    execution.audit_event,
+                ]
+            if execution.success:
+                st.session_state.evidence_review = execution.output
+                evidence_review = execution.output
+                st.session_state.report_payload = {}
+            else:
+                st.error(execution.error or "Review traceability gagal dijalankan.")
 
-        _show_evidence_review(
-            evidence_review
-        )
+    if evidence_review:
+        _show_evidence_review(evidence_review)
 
     st.subheader("Laporan JSON")
 
@@ -871,8 +1052,11 @@ def main() -> None:
         evidence_review=evidence_review,
         ingestion=ingestion,
     )
-    st.session_state.report_payload = report
-
+    report_ready = bool(evidence_review)
+    if not report_ready:
+        st.info("Selesaikan review traceability sebelum membuat laporan JSON.")
+    if report_ready:
+        st.session_state.report_payload = report
     st.download_button(
         "Unduh laporan JSON",
         data=json.dumps(
@@ -882,7 +1066,44 @@ def main() -> None:
         ),
         file_name="metaguard_report.json",
         mime="application/json",
+        disabled=not report_ready,
     )
+    if report_ready:
+        st.session_state.agent_audit = append_audit_event(
+            st.session_state.agent_audit,
+            fingerprint=current_fingerprint,
+            stage=AgentStage.REPORT_REQUIRED,
+            action=AgentAction.BUILD_REPORT,
+            reason="Payload laporan JSON berhasil dibangun.",
+            outcome="success",
+        )
+
+    final_agent_state, final_agent_decision = refresh_agent_review(
+        st.session_state,
+        fingerprint=current_fingerprint,
+        ingestion=ingestion,
+        profile=profile,
+        findings=findings,
+        score=score,
+        metadata_validation=metadata_validation,
+        metadata_validation_completed=st.session_state.metadata_validation_completed,
+        policy_evidence=st.session_state.policy_evidence,
+        policy_evidence_retrieval_completed=(
+            st.session_state.policy_evidence_retrieval_completed
+        ),
+        gemini_analysis=st.session_state.gemini_analysis,
+        evidence_review=st.session_state.evidence_review,
+        report_payload=st.session_state.report_payload,
+    )
+    if (
+        final_agent_state.traceability_review_completed
+        and final_agent_state.traceability_status != "valid"
+    ):
+        st.warning(
+            "Traceability telah ditinjau, tetapi statusnya "
+            f"`{final_agent_state.traceability_status}`. Periksa hasil review sebelum menggunakan laporan."
+        )
+    _show_agentic_review(final_agent_decision, st.session_state.agent_audit)
 
 
 if __name__ == "__main__":
