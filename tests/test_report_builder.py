@@ -412,6 +412,19 @@ def test_report_preserves_contextual_sampling_context() -> None:
     assert report["contextual_validation"]["findings"][0]["affected_rows"] == 3
 
 
+def test_report_contains_evidence_sufficiency_and_lightweight_attempts() -> None:
+    sufficiency = {"status": "sufficient", "score": 90.0, "unique_evidence_count": 2}
+    attempts = [{"attempt_number": 1, "queries": ["metadata"], "sufficiency_status": "sufficient"}]
+    report = build_report(
+        {}, [], {"score": 100, "findings_by_severity": {}},
+        evidence_sufficiency=sufficiency,
+        retrieval_attempts=attempts,
+    )
+    assert report["evidence_sufficiency"] == sufficiency
+    assert report["retrieval_attempts"] == attempts
+    json.dumps(report)
+
+
 def test_report_preserves_chunked_and_sampled_configuration() -> None:
     sampled = {
         "mode": "sampled",

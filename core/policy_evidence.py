@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.evidence_sufficiency import (
+    MAX_RETRIEVAL_ATTEMPTS,
+    deduplicate_policy_evidence,
+    evaluate_evidence_sufficiency,
+    refine_policy_queries,
+)
+
 
 MAX_POLICY_QUERIES = 3
 
@@ -83,3 +90,50 @@ def build_policy_evidence(
         )
 
     return evidence
+
+
+def retrieve_with_bounded_retry(
+    *,
+    initial_queries: list[str],
+    evidence_needs: list[str],
+    retriever: Any,
+    top_k: int = 3,
+) -> dict[str, Any]:
+    """Retrieve once, then perform at most one deterministic refinement retry.
+
+    The returned attempts contain only lightweight query and sufficiency
+    metadata. Full evidence remains in ``policy_evidence`` for the existing
+    traceability and Gemini workflow.
+    """
+    all_evidence: list[dict[str, Any]] = []
+    attempts: list[dict[str, Any]] = []
+    queries = initial_queries
+
+    for attempt_number in range(1, MAX_RETRIEVAL_ATTEMPTS + 1):
+        retrieved = build_policy_evidence(queries, retriever, top_k=top_k)
+        attempt_evaluation = evaluate_evidence_sufficiency(retrieved, evidence_needs)
+        all_evidence.extend(retrieved)
+        sufficiency = evaluate_evidence_sufficiency(all_evidence, evidence_needs)
+        attempts.append(
+            {
+                "attempt_number": attempt_number,
+                "queries": list(queries),
+                "evidence_count": attempt_evaluation["evidence_count"],
+                "unique_evidence_count": attempt_evaluation["unique_evidence_count"],
+                "sufficiency_status": sufficiency["status"],
+                "sufficiency_score": sufficiency["score"],
+                "missing_coverage": list(sufficiency["missing_coverage"]),
+                "reason": "; ".join(sufficiency["reasons"]),
+            }
+        )
+        if sufficiency["status"] == "sufficient":
+            break
+        queries = refine_policy_queries(sufficiency["missing_coverage"])
+        if not queries:
+            break
+
+    return {
+        "policy_evidence": deduplicate_policy_evidence(all_evidence),
+        "evidence_sufficiency": sufficiency,
+        "retrieval_attempts": attempts,
+    }

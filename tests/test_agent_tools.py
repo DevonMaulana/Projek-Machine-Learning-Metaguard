@@ -19,6 +19,8 @@ def _state(**changes: object) -> AgentState:
         "metadata_status": "Lengkap",
         "evidence_retrieval_completed": True,
         "evidence_count": 1,
+        "evidence_sufficiency_evaluated": True,
+        "evidence_sufficiency_status": "sufficient",
     }
     values.update(changes)
     return AgentState(**values)
@@ -29,8 +31,10 @@ def test_static_registry_has_expected_tools_and_no_unknown_tool() -> None:
     assert set(registry) == {
             AgentAction.RUN_QUALITY_PIPELINE,
             AgentAction.VALIDATE_METADATA,
-            AgentAction.RUN_CONTEXTUAL_VALIDATION,
+        AgentAction.RUN_CONTEXTUAL_VALIDATION,
         AgentAction.RETRIEVE_POLICY_EVIDENCE,
+        AgentAction.EVALUATE_EVIDENCE,
+        AgentAction.RETRY_POLICY_RETRIEVAL,
         AgentAction.RUN_GEMINI_ANALYSIS,
         AgentAction.REVIEW_TRACEABILITY,
         AgentAction.BUILD_REPORT,
@@ -113,6 +117,7 @@ def test_gemini_requires_approval_and_evidence_before_single_mock_call() -> None
     registry = {AgentAction.RUN_GEMINI_ANALYSIS: definition}
     assert execute_decision(decision, _state(), context, registry=registry).success is False
     assert execute_decision(decision, _state(evidence_count=0), context, approved=True, registry=registry).success is False
+    assert execute_decision(decision, _state(evidence_sufficiency_status="partial"), context, approved=True, registry=registry).success is False
     result = execute_decision(decision, _state(), context, approved=True, registry=registry)
     assert result.success is True
     assert calls == 1

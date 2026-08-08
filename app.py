@@ -27,8 +27,9 @@ from core.csv_ingestion import (
 )
 from core.contextual_validation import run_contextual_validation
 from core.data_profiler import profile_dataframe
+from core.evidence_sufficiency import build_evidence_needs
 from core.metadata_validator import validate_metadata
-from core.policy_evidence import build_policy_evidence, build_policy_queries
+from core.policy_evidence import build_policy_queries, retrieve_with_bounded_retry
 from core.quality_checker import run_quality_checks
 from core.report_builder import build_report
 from core.scoring import calculate_score
@@ -142,6 +143,50 @@ def _show_policy_evidence(
                     f"Distance: {distance:.4f}"
                 )
                 st.write(text)
+
+
+def _show_evidence_sufficiency(
+    sufficiency: dict[str, Any],
+    attempts: list[dict[str, Any]],
+) -> None:
+    """Render deterministic retrieval sufficiency without vector details."""
+    st.subheader("Evidence Sufficiency")
+    if not sufficiency:
+        st.info("Sufficiency evidence akan dievaluasi setelah retrieval kebijakan dijalankan.")
+        return
+    labels = {
+        "sufficient": "Memadai",
+        "partial": "Sebagian memadai",
+        "insufficient": "Belum memadai",
+    }
+    st.write(f"Status: **{labels.get(sufficiency.get('status'), sufficiency.get('status'))}**")
+    metrics = st.columns(3)
+    metrics[0].metric("Score", f"{float(sufficiency.get('score', 0)):.2f}")
+    metrics[1].metric("Evidence unik", int(sufficiency.get("unique_evidence_count", 0)))
+    metrics[2].metric("Sumber unik", int(sufficiency.get("unique_source_count", 0)))
+    st.caption(
+        "Score ini adalah heuristic kecukupan evidence retrieval MetaGuard, "
+        "bukan bukti kepatuhan, kecukupan hukum, atau kebenaran interpretasi."
+    )
+    coverage = sufficiency.get("coverage", {})
+    if coverage:
+        st.caption("Coverage: " + ", ".join(
+            f"{name} ({'tersedia' if covered else 'belum tersedia'})"
+            for name, covered in coverage.items()
+        ))
+    for reason in sufficiency.get("reasons", []):
+        st.info(reason)
+    with st.expander("Riwayat retrieval evidence"):
+        if not attempts:
+            st.info("Belum ada attempt retrieval.")
+        for attempt in attempts:
+            st.write(
+                f"Attempt {attempt.get('attempt_number')}: "
+                f"{attempt.get('sufficiency_status')} "
+                f"(score {attempt.get('sufficiency_score')})"
+            )
+            if attempt.get("missing_coverage"):
+                st.caption("Coverage belum tersedia: " + ", ".join(attempt["missing_coverage"]))
 
 
 def _show_gemini_analysis(
@@ -437,6 +482,12 @@ def main() -> None:
     if "policy_evidence_retrieval_completed" not in st.session_state:
         st.session_state.policy_evidence_retrieval_completed = False
 
+    if "evidence_sufficiency" not in st.session_state:
+        st.session_state.evidence_sufficiency = {}
+
+    if "retrieval_attempts" not in st.session_state:
+        st.session_state.retrieval_attempts = []
+
     if "metadata_validation_completed" not in st.session_state:
         st.session_state.metadata_validation_completed = False
 
@@ -486,6 +537,7 @@ def main() -> None:
         )
         _show_agentic_review(decision, st.session_state.agent_audit)
         _show_contextual_validation({}, completed=False)
+        _show_evidence_sufficiency({}, [])
         st.info("Unggah file CSV untuk memulai analisis.")
         return
 
@@ -906,6 +958,8 @@ def main() -> None:
         policy_evidence_retrieval_completed=(
             st.session_state.policy_evidence_retrieval_completed
         ),
+        evidence_sufficiency=st.session_state.evidence_sufficiency,
+        retrieval_attempts=st.session_state.retrieval_attempts,
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
@@ -926,18 +980,25 @@ def main() -> None:
             metadata_validation=metadata_validation,
             quality_findings=findings,
         )
+        evidence_needs = build_evidence_needs(
+            metadata_validation,
+            findings,
+            st.session_state.contextual_validation,
+        )
 
         try:
             with st.spinner(
                 "Mencari evidence pada dokumen kebijakan..."
             ):
-                st.session_state.policy_evidence = (
-                    build_policy_evidence(
-                        queries=policy_queries,
-                        retriever=retrieve_policy_chunks,
-                        top_k=3,
-                    )
+                retrieval_result = retrieve_with_bounded_retry(
+                    initial_queries=policy_queries,
+                    evidence_needs=evidence_needs,
+                    retriever=retrieve_policy_chunks,
+                    top_k=3,
                 )
+                st.session_state.policy_evidence = retrieval_result["policy_evidence"]
+                st.session_state.evidence_sufficiency = retrieval_result["evidence_sufficiency"]
+                st.session_state.retrieval_attempts = retrieval_result["retrieval_attempts"]
 
             st.session_state.gemini_analysis = {}
             st.session_state.evidence_review = {}
@@ -954,6 +1015,8 @@ def main() -> None:
 
         except (OSError, RuntimeError, ValueError) as error:
             st.session_state.policy_evidence = []
+            st.session_state.evidence_sufficiency = {}
+            st.session_state.retrieval_attempts = []
             st.session_state.gemini_analysis = {}
             st.session_state.evidence_review = {}
             st.session_state.report_payload = {}
@@ -992,6 +1055,8 @@ def main() -> None:
         policy_evidence_retrieval_completed=(
             st.session_state.policy_evidence_retrieval_completed
         ),
+        evidence_sufficiency=st.session_state.evidence_sufficiency,
+        retrieval_attempts=st.session_state.retrieval_attempts,
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
@@ -999,6 +1064,10 @@ def main() -> None:
 
     _show_policy_evidence(
         policy_evidence
+    )
+    _show_evidence_sufficiency(
+        st.session_state.evidence_sufficiency,
+        st.session_state.retrieval_attempts,
     )
 
     st.subheader("Analisis dengan Gemini")
@@ -1013,6 +1082,8 @@ def main() -> None:
         agent_decision.current_stage is AgentStage.ANALYSIS_READY
         and agent_decision.next_action is AgentAction.RUN_GEMINI_ANALYSIS
         and agent_state.evidence_count > 0
+        and agent_state.evidence_sufficiency_evaluated
+        and agent_state.evidence_sufficiency_status == "sufficient"
     )
 
     if not gemini_allowed:
@@ -1084,6 +1155,8 @@ def main() -> None:
             policy_evidence_retrieval_completed=(
                 st.session_state.policy_evidence_retrieval_completed
             ),
+            evidence_sufficiency=st.session_state.evidence_sufficiency,
+            retrieval_attempts=st.session_state.retrieval_attempts,
             gemini_analysis=gemini_analysis,
             evidence_review=evidence_review,
             report_payload=st.session_state.report_payload,
@@ -1130,6 +1203,8 @@ def main() -> None:
         gemini_analysis=gemini_analysis,
         evidence_review=evidence_review,
         ingestion=ingestion,
+        evidence_sufficiency=st.session_state.evidence_sufficiency,
+        retrieval_attempts=st.session_state.retrieval_attempts,
     )
     report_ready = bool(evidence_review)
     if not report_ready:
@@ -1172,6 +1247,8 @@ def main() -> None:
         policy_evidence_retrieval_completed=(
             st.session_state.policy_evidence_retrieval_completed
         ),
+        evidence_sufficiency=st.session_state.evidence_sufficiency,
+        retrieval_attempts=st.session_state.retrieval_attempts,
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,

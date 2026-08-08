@@ -39,6 +39,8 @@ def _evidence_inputs(**changes: object) -> dict[str, object]:
     values = _metadata_complete_inputs(
         policy_evidence_retrieval_completed=True,
         policy_evidence=[{"query": "q", "results": [{"chunk_id": "p1"}]}],
+        evidence_sufficiency={"status": "sufficient", "score": 90.0},
+        retrieval_attempts=[{"attempt_number": 1}],
     )
     values.update(changes)
     return values
@@ -61,9 +63,36 @@ def test_acceptance_metadata_and_retrieval_transitions() -> None:
     )
     assert never_retrieved.current_stage is AgentStage.EVIDENCE_REQUIRED
     assert never_retrieved.next_action is AgentAction.RETRIEVE_POLICY_EVIDENCE
-    assert empty_retrieval.current_stage is AgentStage.EVIDENCE_REQUIRED
-    assert empty_retrieval.next_action is AgentAction.NONE
-    assert empty_retrieval.requires_human_action is True
+    assert empty_retrieval.current_stage is AgentStage.EVIDENCE_REVIEW_REQUIRED
+    assert empty_retrieval.next_action is AgentAction.EVALUATE_EVIDENCE
+
+
+def test_evidence_sufficiency_controls_retry_and_gemini_guard() -> None:
+    partial = plan_next_action(
+        build_agent_state(
+            **_metadata_complete_inputs(
+                policy_evidence_retrieval_completed=True,
+                policy_evidence=[{"query": "metadata", "results": [{"chunk_id": "one"}]}],
+                evidence_sufficiency={"status": "partial", "score": 45.0, "missing_coverage": ["data_quality"]},
+                retrieval_attempts=[{"attempt_number": 1}],
+            )
+        )
+    )
+    exhausted = plan_next_action(
+        build_agent_state(
+            **_metadata_complete_inputs(
+                policy_evidence_retrieval_completed=True,
+                policy_evidence=[{"query": "metadata", "results": [{"chunk_id": "one"}]}],
+                evidence_sufficiency={"status": "insufficient", "score": 0.0, "missing_coverage": ["data_quality"]},
+                retrieval_attempts=[{"attempt_number": 1}, {"attempt_number": 2}],
+            )
+        )
+    )
+    assert partial.current_stage is AgentStage.EVIDENCE_REQUIRED
+    assert partial.next_action is AgentAction.RETRY_POLICY_RETRIEVAL
+    assert exhausted.current_stage is AgentStage.EVIDENCE_REVIEW_REQUIRED
+    assert exhausted.next_action is AgentAction.NONE
+    assert exhausted.requires_human_action is True
 
 
 def test_contextual_validation_is_required_before_evidence_and_findings_do_not_block() -> None:
@@ -183,6 +212,8 @@ def test_fingerprint_change_resets_derived_agent_workflow() -> None:
     session = {
         "policy_evidence": [{"results": [{"chunk_id": "p1"}]}],
         "policy_evidence_retrieval_completed": True,
+        "evidence_sufficiency": {"status": "sufficient"},
+        "retrieval_attempts": [{"attempt_number": 1}],
         "gemini_analysis": {"summary": "mock"},
         "evidence_review": {"status": "valid"},
         "report_payload": {"schema_version": "1.0"},
@@ -198,6 +229,8 @@ def test_fingerprint_change_resets_derived_agent_workflow() -> None:
     )
     assert session["policy_evidence"] == []
     assert session["policy_evidence_retrieval_completed"] is False
+    assert session["evidence_sufficiency"] == {}
+    assert session["retrieval_attempts"] == []
     assert session["gemini_analysis"] == {}
     assert session["evidence_review"] == {}
     assert session["report_payload"] == {}
@@ -212,12 +245,15 @@ def test_same_fingerprint_rerun_preserves_state_and_deduplicates_audit() -> None
     inputs = _metadata_complete_inputs(
         policy_evidence_retrieval_completed=True,
         policy_evidence=[{"results": [{"chunk_id": "p1"}]}],
+        evidence_sufficiency={"status": "sufficient", "score": 90.0},
+        retrieval_attempts=[{"attempt_number": 1}],
     )
     first_state, first_decision = refresh_agent_review(session, **inputs)
     second_state, second_decision = refresh_agent_review(session, **inputs)
     assert first_state == second_state
     assert first_decision == second_decision
     assert len(session["agent_audit"]) == 1
+    assert first_state.retrieval_attempt_count == 1
 
 
 def test_meaningful_transition_adds_audit_step() -> None:

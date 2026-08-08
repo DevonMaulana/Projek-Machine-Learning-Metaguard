@@ -70,11 +70,17 @@ def test_evidence_empty_blocks_gemini_and_evidence_available_unlocks_it() -> Non
     )
     empty = plan_next_action(AgentState(**{**base.to_dict(), "evidence_retrieval_completed": True}))
     ready = plan_next_action(
-        AgentState(**{**base.to_dict(), "evidence_retrieval_completed": True, "evidence_count": 1})
+        AgentState(**{
+            **base.to_dict(),
+            "evidence_retrieval_completed": True,
+            "evidence_count": 1,
+            "evidence_sufficiency_evaluated": True,
+            "evidence_sufficiency_status": "sufficient",
+        })
     )
-    assert empty.current_stage is AgentStage.EVIDENCE_REQUIRED
-    assert empty.next_action is AgentAction.NONE
-    assert empty.requires_human_action is True
+    assert empty.current_stage is AgentStage.EVIDENCE_REVIEW_REQUIRED
+    assert empty.next_action is AgentAction.EVALUATE_EVIDENCE
+    assert empty.requires_human_action is False
     assert ready.current_stage is AgentStage.ANALYSIS_READY
     assert ready.next_action is AgentAction.RUN_GEMINI_ANALYSIS
     assert ready.requires_human_action is True
@@ -86,6 +92,8 @@ def test_traceability_report_and_complete_transitions() -> None:
         metadata_status="Lengkap",
         evidence_retrieval_completed=True,
         evidence_count=1,
+        evidence_sufficiency_evaluated=True,
+        evidence_sufficiency_status="sufficient",
         gemini_analysis_completed=True,
         contextual_validation_completed=True,
     )

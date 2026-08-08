@@ -11,8 +11,17 @@ from core.agent_models import AgentAction, AgentStage
 from core.contextual_validation import run_contextual_validation
 from core.data_profiler import profile_dataframe
 from core.evidence_reviewer import review_evidence_traceability
+from core.evidence_sufficiency import (
+    build_evidence_needs,
+    evaluate_evidence_sufficiency,
+    refine_policy_queries,
+)
 from core.metadata_validator import validate_metadata
-from core.policy_evidence import build_policy_evidence, build_policy_queries
+from core.policy_evidence import (
+    build_policy_evidence,
+    build_policy_queries,
+    retrieve_with_bounded_retry,
+)
 from core.quality_checker import run_quality_checks
 from core.report_builder import build_report
 from core.scoring import calculate_score
@@ -36,6 +45,9 @@ class AgentExecutionContext:
     contextual_validation: dict[str, Any] = field(default_factory=dict)
     contextual_profile: str = "healthcare"
     policy_evidence: list[dict[str, Any]] = field(default_factory=list)
+    evidence_needs: list[str] = field(default_factory=list)
+    evidence_sufficiency: dict[str, Any] = field(default_factory=dict)
+    retrieval_attempts: list[dict[str, Any]] = field(default_factory=list)
     gemini_analysis: dict[str, Any] = field(default_factory=dict)
     evidence_review: dict[str, Any] = field(default_factory=dict)
     source: dict[str, Any] = field(default_factory=dict)
@@ -84,9 +96,31 @@ def _run_contextual_validation(context: AgentExecutionContext) -> dict[str, Any]
     )
 
 
-def _retrieve_policy_evidence(context: AgentExecutionContext) -> list[dict[str, Any]]:
-    """Build deterministic policy queries and retrieve their evidence."""
+def _retrieve_policy_evidence(context: AgentExecutionContext) -> dict[str, Any]:
+    """Run the bounded deterministic evidence-retrieval flow."""
     queries = build_policy_queries(context.metadata_validation, context.findings)
+    needs = context.evidence_needs or build_evidence_needs(
+        context.metadata_validation,
+        context.findings,
+        context.contextual_validation,
+    )
+    return retrieve_with_bounded_retry(
+        initial_queries=queries,
+        evidence_needs=needs,
+        retriever=context.retriever,
+        top_k=3,
+    )
+
+
+def _evaluate_evidence(context: AgentExecutionContext) -> dict[str, Any]:
+    """Evaluate retrieval sufficiency before any Gemini call."""
+    return evaluate_evidence_sufficiency(context.policy_evidence, context.evidence_needs)
+
+
+def _retry_policy_retrieval(context: AgentExecutionContext) -> list[dict[str, Any]]:
+    """Run one deterministic query refinement from the last evaluation result."""
+    sufficiency = evaluate_evidence_sufficiency(context.policy_evidence, context.evidence_needs)
+    queries = refine_policy_queries(sufficiency["missing_coverage"])
     return build_policy_evidence(queries, context.retriever, top_k=3)
 
 
@@ -121,6 +155,8 @@ def _build_report(context: AgentExecutionContext) -> dict[str, Any]:
         metadata_validation=context.metadata_validation,
         contextual_validation=context.contextual_validation,
         policy_evidence=context.policy_evidence,
+        evidence_sufficiency=context.evidence_sufficiency,
+        retrieval_attempts=context.retrieval_attempts,
         gemini_analysis=context.gemini_analysis,
         evidence_review=context.evidence_review,
         ingestion=context.ingestion,
@@ -161,6 +197,22 @@ def build_tool_registry() -> Mapping[AgentAction, ToolDefinition]:
             allowed_stages=(AgentStage.EVIDENCE_REQUIRED,),
             requires_human_approval=False,
             handler=_retrieve_policy_evidence,
+        ),
+        ToolDefinition(
+            name="evaluate_evidence",
+            description="Evaluate deterministic evidence sufficiency before Gemini.",
+            action=AgentAction.EVALUATE_EVIDENCE,
+            allowed_stages=(AgentStage.EVIDENCE_REVIEW_REQUIRED,),
+            requires_human_approval=False,
+            handler=_evaluate_evidence,
+        ),
+        ToolDefinition(
+            name="retry_policy_retrieval",
+            description="Retry policy retrieval once with deterministic refined queries.",
+            action=AgentAction.RETRY_POLICY_RETRIEVAL,
+            allowed_stages=(AgentStage.EVIDENCE_REQUIRED,),
+            requires_human_approval=False,
+            handler=_retry_policy_retrieval,
         ),
         ToolDefinition(
             name="run_gemini_analysis",

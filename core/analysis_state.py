@@ -33,6 +33,8 @@ def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
     keys = (
         "policy_evidence",
         "policy_evidence_retrieval_completed",
+        "evidence_sufficiency",
+        "retrieval_attempts",
         "gemini_analysis",
         "evidence_review",
         "report_payload",
@@ -46,6 +48,8 @@ def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
     had_results = any(bool(session_state.get(key)) for key in keys)
     session_state["policy_evidence"] = []
     session_state["policy_evidence_retrieval_completed"] = False
+    session_state["evidence_sufficiency"] = {}
+    session_state["retrieval_attempts"] = []
     session_state["gemini_analysis"] = {}
     session_state["evidence_review"] = {}
     session_state["report_payload"] = {}

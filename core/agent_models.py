@@ -16,6 +16,7 @@ class AgentStage(str, Enum):
     METADATA_REQUIRED = "METADATA_REQUIRED"
     CONTEXTUAL_VALIDATION_REQUIRED = "CONTEXTUAL_VALIDATION_REQUIRED"
     EVIDENCE_REQUIRED = "EVIDENCE_REQUIRED"
+    EVIDENCE_REVIEW_REQUIRED = "EVIDENCE_REVIEW_REQUIRED"
     ANALYSIS_READY = "ANALYSIS_READY"
     TRACEABILITY_REQUIRED = "TRACEABILITY_REQUIRED"
     REPORT_REQUIRED = "REPORT_REQUIRED"
@@ -30,6 +31,8 @@ class AgentAction(str, Enum):
     VALIDATE_METADATA = "VALIDATE_METADATA"
     RUN_CONTEXTUAL_VALIDATION = "RUN_CONTEXTUAL_VALIDATION"
     RETRIEVE_POLICY_EVIDENCE = "RETRIEVE_POLICY_EVIDENCE"
+    EVALUATE_EVIDENCE = "EVALUATE_EVIDENCE"
+    RETRY_POLICY_RETRIEVAL = "RETRY_POLICY_RETRIEVAL"
     RUN_GEMINI_ANALYSIS = "RUN_GEMINI_ANALYSIS"
     REVIEW_TRACEABILITY = "REVIEW_TRACEABILITY"
     BUILD_REPORT = "BUILD_REPORT"
@@ -56,6 +59,11 @@ class AgentState:
     contextual_requires_human_review: bool = False
     evidence_retrieval_completed: bool = False
     evidence_count: int = 0
+    evidence_sufficiency_evaluated: bool = False
+    evidence_sufficiency_status: str | None = None
+    evidence_sufficiency_score: float | None = None
+    retrieval_attempt_count: int = 0
+    retrieval_retry_available: bool = False
     gemini_analysis_completed: bool = False
     traceability_review_completed: bool = False
     traceability_status: str | None = None

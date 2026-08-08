@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable, MutableMapping
 
 from core.agent_models import AgentAction, AgentAuditEvent, AgentDecision, AgentStage, AgentState
+from core.evidence_sufficiency import MAX_RETRIEVAL_ATTEMPTS
 
 SUCCESSFUL_INGESTION_STATUSES = {"success", "success_with_warnings"}
 
@@ -22,6 +23,8 @@ def build_agent_state(
     contextual_validation_completed: bool = False,
     policy_evidence: list[dict[str, Any]] | None = None,
     policy_evidence_retrieval_completed: bool = False,
+    evidence_sufficiency: dict[str, Any] | None = None,
+    retrieval_attempts: list[dict[str, Any]] | None = None,
     gemini_analysis: dict[str, Any] | None = None,
     evidence_review: dict[str, Any] | None = None,
     report_payload: dict[str, Any] | None = None,
@@ -31,6 +34,8 @@ def build_agent_state(
     diagnostics = ingestion or {}
     status = diagnostics.get("status")
     evidence = policy_evidence or []
+    sufficiency = evidence_sufficiency or {}
+    attempts = retrieval_attempts or []
     return AgentState(
         fingerprint=fingerprint,
         ingestion_completed=ingestion is not None,
@@ -48,6 +53,16 @@ def build_agent_state(
         contextual_requires_human_review=bool((contextual_validation or {}).get("finding_count", 0)),
         evidence_retrieval_completed=policy_evidence_retrieval_completed,
         evidence_count=count_policy_evidence(evidence),
+        evidence_sufficiency_evaluated=bool(sufficiency),
+        evidence_sufficiency_status=sufficiency.get("status"),
+        evidence_sufficiency_score=sufficiency.get("score"),
+        retrieval_attempt_count=len(attempts),
+        retrieval_retry_available=(
+            bool(sufficiency)
+            and sufficiency.get("status") != "sufficient"
+            and bool(sufficiency.get("missing_coverage"))
+            and len(attempts) < MAX_RETRIEVAL_ATTEMPTS
+        ),
         gemini_analysis_completed=bool(gemini_analysis),
         traceability_review_completed=bool(evidence_review),
         traceability_status=(evidence_review or {}).get("status"),

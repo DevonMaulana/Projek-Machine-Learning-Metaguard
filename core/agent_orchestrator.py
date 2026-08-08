@@ -75,12 +75,24 @@ def plan_next_action(state: AgentState) -> AgentDecision:
             AgentAction.RETRIEVE_POLICY_EVIDENCE,
             "Metadata lengkap, tetapi retrieval policy evidence belum dijalankan.",
         )
-    if state.evidence_count == 0:
+    if not state.evidence_sufficiency_evaluated:
         return AgentDecision(
-            AgentStage.EVIDENCE_REQUIRED,
+            AgentStage.EVIDENCE_REVIEW_REQUIRED,
+            AgentAction.EVALUATE_EVIDENCE,
+            "Retrieval selesai tetapi sufficiency evidence belum dievaluasi.",
+        )
+    if state.evidence_sufficiency_status != "sufficient":
+        if state.retrieval_retry_available:
+            return AgentDecision(
+                AgentStage.EVIDENCE_REQUIRED,
+                AgentAction.RETRY_POLICY_RETRIEVAL,
+                "Evidence belum memadai dan satu retry retrieval deterministik masih tersedia.",
+            )
+        return AgentDecision(
+            AgentStage.EVIDENCE_REVIEW_REQUIRED,
             AgentAction.NONE,
-            "Retrieval selesai tetapi tidak menghasilkan policy evidence.",
-            "Evidence kebijakan tidak tersedia; Gemini tidak dapat dijalankan.",
+            "Evidence telah dievaluasi tetapi belum memadai untuk analisis Gemini.",
+            "Evidence belum memadai untuk analisis AI. Perbaiki metadata atau input lalu jalankan ulang.",
             True,
         )
     if not state.gemini_analysis_completed:
@@ -136,6 +148,8 @@ def execute_decision(
             return _failure(decision, state, step, "Approval manusia eksplisit diperlukan sebelum Gemini dijalankan.")
         if state.evidence_count <= 0:
             return _failure(decision, state, step, "Gemini tidak dapat dijalankan tanpa policy evidence.")
+        if not state.evidence_sufficiency_evaluated or state.evidence_sufficiency_status != "sufficient":
+            return _failure(decision, state, step, "Gemini hanya dapat dijalankan setelah evidence berstatus sufficient.")
     try:
         output = definition.handler(context)
     except Exception as error:  # Tool failures must become structured results.

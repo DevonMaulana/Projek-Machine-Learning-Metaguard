@@ -121,6 +121,39 @@ def test_evidence_counter_ignores_non_list_results() -> None:
     assert count_policy_evidence([{"results": []}, {"results": "invalid"}]) == 0
 
 
+def test_sufficiency_and_attempts_are_mapped_without_full_log_in_state() -> None:
+    state = build_agent_state(
+        fingerprint="x",
+        ingestion={"status": "success"}, profile={}, findings=[], score={},
+        metadata_validation={"status": "Lengkap"}, metadata_validation_completed=True,
+        contextual_validation_completed=True,
+        policy_evidence_retrieval_completed=True,
+        policy_evidence=[{"results": [{"chunk_id": "one"}]}],
+        evidence_sufficiency={"status": "partial", "score": 50.0, "missing_coverage": ["data_quality"]},
+        retrieval_attempts=[{"attempt_number": 1, "queries": ["not retained by state"]}],
+    )
+    assert state.evidence_sufficiency_evaluated is True
+    assert state.evidence_sufficiency_status == "partial"
+    assert state.retrieval_attempt_count == 1
+    assert state.retrieval_retry_available is True
+    assert "queries" not in state.to_dict()
+
+
+def test_partial_sufficiency_without_missing_coverage_does_not_offer_empty_retry() -> None:
+    state = build_agent_state(
+        fingerprint="x",
+        ingestion={"status": "success"}, profile={}, findings=[], score={},
+        metadata_validation={"status": "Lengkap"}, metadata_validation_completed=True,
+        contextual_validation_completed=True,
+        policy_evidence_retrieval_completed=True,
+        policy_evidence=[{"results": [{"chunk_id": "one"}]}],
+        evidence_sufficiency={"status": "partial", "score": 70.0, "missing_coverage": []},
+        retrieval_attempts=[{"attempt_number": 1}],
+    )
+    assert state.retrieval_retry_available is False
+    assert plan_next_action(state).next_action is AgentAction.NONE
+
+
 def test_decision_events_do_not_duplicate_on_rerun_equivalent_state() -> None:
     state = build_agent_state(fingerprint=None)
     decision = plan_next_action(state)
