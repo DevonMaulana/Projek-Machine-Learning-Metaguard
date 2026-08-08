@@ -139,6 +139,29 @@ def test_acceptance_evidence_to_gemini_traceability_and_report() -> None:
     assert report.next_action is AgentAction.BUILD_REPORT
 
 
+def test_final_acceptance_complete_and_insufficient_paths_are_disjoint() -> None:
+    complete = build_agent_state(
+        **_evidence_inputs(
+            gemini_analysis={"summary": "mock"},
+            evidence_review={"status": "valid"},
+            report_payload={"schema_version": "1.0"},
+        )
+    )
+    blocked = build_agent_state(
+        **_metadata_complete_inputs(
+            policy_evidence_retrieval_completed=True,
+            policy_evidence=[],
+            evidence_sufficiency={"status": "insufficient", "score": 0.0, "missing_coverage": ["metadata_governance"]},
+            retrieval_attempts=[{"attempt_number": 1}, {"attempt_number": 2}],
+        )
+    )
+    assert plan_next_action(complete).current_stage is AgentStage.COMPLETE
+    blocked_decision = plan_next_action(blocked)
+    assert blocked_decision.current_stage is AgentStage.EVIDENCE_REVIEW_REQUIRED
+    assert blocked_decision.requires_human_action is True
+    assert blocked_decision.next_action is AgentAction.NONE
+
+
 def test_gemini_guard_requires_approval_and_calls_mock_once() -> None:
     calls = 0
 
