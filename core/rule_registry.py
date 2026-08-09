@@ -20,9 +20,15 @@ from core.domain_models import DomainId, validate_domain_id
 RULE_REGISTRY_PATH = Path(__file__).resolve().parents[1] / "data" / "rule_registry.json"
 VALID_SEVERITIES = frozenset({"high", "medium", "low", "info"})
 VALID_RULE_TYPES = frozenset({"cross_column"})
-VALID_RULE_PACK_IDS = frozenset({"healthcare_core"})
+VALID_RULE_PACK_IDS = frozenset({"healthcare_core", "education_core", "environment_core"})
 KNOWN_EVALUATOR_IDS = frozenset(
-    {"health_bed_capacity_consistency", "health_internet_bandwidth_consistency"}
+    {
+        "health_bed_capacity_consistency",
+        "health_internet_bandwidth_consistency",
+        "education_student_without_teacher",
+        "education_student_without_classroom",
+        "environment_offline_sensor_with_measurement",
+    }
 )
 REQUIRED_RULE_FIELDS = frozenset(
     {

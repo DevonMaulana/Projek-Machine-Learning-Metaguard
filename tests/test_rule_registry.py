@@ -21,16 +21,25 @@ def _raw_registry() -> dict[str, object]:
     return json.loads(Path("data/rule_registry.json").read_text(encoding="utf-8"))
 
 
-def test_rule_registry_loads_stable_healthcare_pack() -> None:
+def test_rule_registry_loads_stable_domain_packs_without_policy_claims() -> None:
     registry = load_rule_registry()
     assert [rule.rule_id for rule in registry.rules] == [
         "HEALTH-BED-CAPACITY-001",
         "HEALTH-INTERNET-BANDWIDTH-001",
+        "EDU-STUDENT-TEACHER-001",
+        "EDU-STUDENT-CLASSROOM-001",
+        "ENV-SENSOR-MEASUREMENT-001",
     ]
-    assert {rule.rule_pack_id for rule in registry.rules} == {"healthcare_core"}
-    assert {rule.domain_id.value for rule in registry.rules} == {"healthcare"}
+    assert {rule.rule_pack_id for rule in registry.rules} == {
+        "healthcare_core",
+        "education_core",
+        "environment_core",
+    }
+    assert {rule.domain_id.value for rule in registry.rules} == {"healthcare", "education", "environment"}
     assert registry.rules[0].provenance_type is ProvenanceType.DETERMINISTIC_INVARIANT
     assert registry.rules[1].provenance_type is ProvenanceType.HEURISTIC
+    pilot_rules = [rule for rule in registry.rules if rule.domain_id.value in {"education", "environment"}]
+    assert all(rule.provenance_type is ProvenanceType.HEURISTIC for rule in pilot_rules)
     assert all(not rule.policy_requirement for rule in registry.rules)
 
 
@@ -94,15 +103,23 @@ def test_rule_registry_rejects_duplicate_or_unknown_required_concepts() -> None:
         parse_rule_registry(raw)
 
 
-def test_rule_registry_does_not_activate_cross_domain_rules() -> None:
+def test_rule_registry_scopes_rules_strictly_to_their_domain() -> None:
     registry = load_rule_registry()
-    assert not registry.rules_for_domain("education")
-    assert not registry.rules_for_domain("environment")
+    assert {rule.rule_pack_id for rule in registry.rules_for_domain("education")} == {"education_core"}
+    assert {rule.rule_pack_id for rule in registry.rules_for_domain("environment")} == {"environment_core"}
     assert not registry.rules_for_domain("generic")
-    assert registry.rules_for_domain("healthcare") == registry.rules
+    assert not registry.rules_for_domain("other")
+    assert {rule.rule_pack_id for rule in registry.rules_for_domain("healthcare")} == {"healthcare_core"}
 
 
 def test_rule_registry_can_validate_against_an_explicit_concept_registry() -> None:
     concepts = load_concept_registry()
     registry = load_rule_registry(concept_registry=concepts)
-    assert len(registry.rules) == 2
+    assert len(registry.rules) == 5
+
+
+def test_rule_registry_rejects_cross_domain_optional_concepts() -> None:
+    raw = _raw_registry()
+    raw["rules"][2]["optional_concepts"] = ["pm25_measurement"]  # type: ignore[index]
+    with pytest.raises(RuleRegistryError, match="bukan milik domain rule"):
+        parse_rule_registry(raw)

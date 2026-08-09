@@ -247,4 +247,23 @@ def test_non_healthcare_domains_keep_generic_context_checks_without_healthcare_r
         )
         assert _findings(result, "metadata_period_vs_dataset_dates")
         assert not _findings(result, "occupied_beds_exceed_capacity")
-        assert result["domain_rule_execution"]["rules_total"] == 0
+        expected_rule_count = 2 if domain == "education" else 1 if domain == "environment" else 0
+        assert result["domain_rule_execution"]["rules_total"] == expected_rule_count
+
+
+def test_contextual_validation_integrates_education_and_environment_pilots_without_cross_domain_leakage() -> None:
+    education = run_contextual_validation(
+        pd.DataFrame({"jumlah_siswa": [8], "jumlah_guru": [0], "jumlah_kelas": [1]}),
+        _metadata(data_period="", geographic_scope=""),
+        selected_domain="education",
+    )
+    assert _findings(education, "student_count_without_teacher")
+    assert not _findings(education, "offline_sensor_with_measurement")
+
+    environment = run_contextual_validation(
+        pd.DataFrame({"status_sensor": ["offline"], "pm25": [12]}),
+        _metadata(data_period="", geographic_scope=""),
+        selected_domain="environment",
+    )
+    assert _findings(environment, "offline_sensor_with_measurement")
+    assert not _findings(environment, "student_count_without_teacher")
