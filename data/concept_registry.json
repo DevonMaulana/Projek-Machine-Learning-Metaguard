@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0",
+  "concepts": [
+    {
+      "concept_id": "occupied_beds",
+      "domain_id": "healthcare",
+      "canonical_name": "tempat_tidur_terisi",
+      "aliases": ["tempat_tidur_terisi"],
+      "description": "Curated MetaGuard semantic mapping for occupied inpatient beds.",
+      "expected_data_type": "integer"
+    },
+    {
+      "concept_id": "inpatient_capacity",
+      "domain_id": "healthcare",
+      "canonical_name": "kapasitas_rawat_inap",
+      "aliases": ["kapasitas_rawat_inap"],
+      "description": "Curated MetaGuard semantic mapping for inpatient capacity.",
+      "expected_data_type": "integer"
+    },
+    {
+      "concept_id": "internet_status",
+      "domain_id": "healthcare",
+      "canonical_name": "status_internet",
+      "aliases": ["status_internet"],
+      "description": "Curated MetaGuard semantic mapping for internet availability status.",
+      "expected_data_type": "string"
+    },
+    {
+      "concept_id": "bandwidth_mbps",
+      "domain_id": "healthcare",
+      "canonical_name": "bandwidth_mbps",
+      "aliases": ["bandwidth_mbps"],
+      "description": "Curated MetaGuard semantic mapping for measured bandwidth.",
+      "expected_data_type": "number",
+      "unit_expectation": "mbps"
+    },
+    {
+      "concept_id": "student_count",
+      "domain_id": "education",
+      "canonical_name": "jumlah_siswa",
+      "aliases": ["jumlah_siswa", "jml_siswa", "total_siswa"],
+      "description": "Curated MetaGuard semantic mapping for student count.",
+      "expected_data_type": "integer"
+    },
+    {
+      "concept_id": "teacher_count",
+      "domain_id": "education",
+      "canonical_name": "jumlah_guru",
+      "aliases": ["jumlah_guru", "jml_guru", "total_guru"],
+      "description": "Curated MetaGuard semantic mapping for teacher count.",
+      "expected_data_type": "integer"
+    },
+    {
+      "concept_id": "classroom_count",
+      "domain_id": "education",
+      "canonical_name": "jumlah_kelas",
+      "aliases": ["jumlah_kelas", "jml_kelas", "total_kelas"],
+      "description": "Curated MetaGuard semantic mapping for classroom count.",
+      "expected_data_type": "integer"
+    },
+    {
+      "concept_id": "attendance_percentage",
+      "domain_id": "education",
+      "canonical_name": "persentase_kehadiran",
+      "aliases": ["persentase_kehadiran"],
+      "description": "Curated MetaGuard semantic mapping for attendance percentage.",
+      "expected_data_type": "percentage",
+      "unit_expectation": "percent"
+    },
+    {
+      "concept_id": "ph_measurement",
+      "domain_id": "environment",
+      "canonical_name": "ph",
+      "aliases": ["ph", "ph_air", "nilai_ph"],
+      "description": "Curated MetaGuard semantic mapping for pH measurement.",
+      "expected_data_type": "number"
+    },
+    {
+      "concept_id": "sensor_status",
+      "domain_id": "environment",
+      "canonical_name": "status_sensor",
+      "aliases": ["status_sensor"],
+      "description": "Curated MetaGuard semantic mapping for sensor status.",
+      "expected_data_type": "string"
+    },
+    {
+      "concept_id": "measurement_date",
+      "domain_id": "environment",
+      "canonical_name": "tanggal_pengukuran",
+      "aliases": ["tanggal_pengukuran"],
+      "description": "Curated MetaGuard semantic mapping for measurement date.",
+      "expected_data_type": "date"
+    },
+    {
+      "concept_id": "pm25_measurement",
+      "domain_id": "environment",
+      "canonical_name": "pm25",
+      "aliases": ["pm25", "pm_25"],
+      "description": "Curated MetaGuard semantic mapping for PM2.5 measurement.",
+      "expected_data_type": "number"
+    },
+    {
+      "concept_id": "pm10_measurement",
+      "domain_id": "environment",
+      "canonical_name": "pm10",
+      "aliases": ["pm10", "pm_10"],
+      "description": "Curated MetaGuard semantic mapping for PM10 measurement.",
+      "expected_data_type": "number"
+    }
+  ]
+}
