@@ -13,7 +13,9 @@ import streamlit as st
 from core.analysis_state import (
     build_analysis_fingerprint,
     reset_analysis_results,
+    update_analysis_fingerprint,
 )
+from core.analysis_context import build_analysis_context
 from core.agent_models import AgentAction, AgentAuditEvent, AgentDecision, AgentStage
 from core.agent_orchestrator import execute_decision
 from core.agent_state_builder import append_audit_event, refresh_agent_review
@@ -27,6 +29,7 @@ from core.csv_ingestion import (
 )
 from core.contextual_validation import run_contextual_validation
 from core.data_profiler import profile_dataframe
+from core.domain_models import DomainId, GovernanceContext
 from core.evidence_sufficiency import build_evidence_needs
 from core.metadata_validator import validate_metadata
 from core.policy_evidence import build_policy_queries, retrieve_with_bounded_retry
@@ -434,6 +437,12 @@ def _show_contextual_validation(
     }
     st.write(f"Status: **{labels.get(status, status)}**")
     st.metric("Jumlah temuan kontekstual", count)
+    domain_execution = validation.get("domain_rule_execution") or {}
+    if domain_execution.get("rules_total") == 0:
+        st.info(
+            "Pemeriksaan kualitas dan konteks generik tetap aktif; "
+            "belum ada rule domain-specific untuk domain yang dipilih."
+        )
     if not count:
         st.info("Tidak ada potensi inkonsistensi dari rule kontekstual yang dapat dievaluasi.")
         return
@@ -512,6 +521,15 @@ def main() -> None:
     if "analysis_fingerprint" not in st.session_state:
         st.session_state.analysis_fingerprint = None
 
+    if "analysis_context" not in st.session_state:
+        st.session_state.analysis_context = None
+
+    if "analysis_context_fingerprint" not in st.session_state:
+        st.session_state.analysis_context_fingerprint = None
+
+    if "analysis_input_fingerprint" not in st.session_state:
+        st.session_state.analysis_input_fingerprint = None
+
     if "analysis_state_reset" not in st.session_state:
         st.session_state.analysis_state_reset = False
 
@@ -523,6 +541,33 @@ def main() -> None:
 
     if "agent_audit" not in st.session_state:
         st.session_state.agent_audit = []
+
+    context_columns = st.columns(2)
+    domain_labels = {
+        DomainId.GENERIC.value: "Generic",
+        DomainId.HEALTHCARE.value: "Healthcare",
+        DomainId.EDUCATION.value: "Education",
+        DomainId.ENVIRONMENT.value: "Environment",
+        DomainId.OTHER.value: "Other",
+    }
+    governance_labels = {
+        GovernanceContext.GENERIC_NON_GOVERNMENT.value: "Generic / non-government",
+        GovernanceContext.GOVERNMENT_PUBLIC.value: "Government / public data",
+    }
+    with context_columns[0]:
+        selected_domain = st.selectbox(
+            "Domain",
+            options=list(domain_labels),
+            format_func=domain_labels.__getitem__,
+            key="selected_domain",
+        )
+    with context_columns[1]:
+        governance_context = st.selectbox(
+            "Konteks tata kelola",
+            options=list(governance_labels),
+            format_func=governance_labels.__getitem__,
+            key="governance_context",
+        )
 
     uploaded_file = st.file_uploader(
         "Unggah satu file CSV",
@@ -555,6 +600,7 @@ def main() -> None:
         st.session_state.active_file_signature = file_signature
         reset_analysis_results(st.session_state)
         st.session_state.analysis_fingerprint = None
+        st.session_state.analysis_input_fingerprint = None
         st.session_state.analysis_state_reset = False
 
     st.caption(
@@ -826,7 +872,18 @@ def main() -> None:
         "publication_purpose": publication_purpose,
     }
 
-    current_fingerprint = build_analysis_fingerprint(
+    try:
+        analysis_context = build_analysis_context(
+            selected_domain=selected_domain,
+            governance_context=governance_context,
+        )
+    except ValueError as error:
+        st.error(f"Konteks analisis tidak dapat dimuat: {error}")
+        return
+    analysis_context_fingerprint = analysis_context.fingerprint()
+    previous_context_fingerprint = st.session_state.analysis_context_fingerprint
+
+    current_input_fingerprint = build_analysis_fingerprint(
         file_name=uploaded_file.name,
         file_bytes=file_bytes,
         metadata=metadata,
@@ -843,27 +900,47 @@ def main() -> None:
             "sample_seed": ingestion_config.sample_seed,
         },
     )
-
-    previous_fingerprint = (
-        st.session_state.analysis_fingerprint
+    current_fingerprint = build_analysis_fingerprint(
+        file_name=uploaded_file.name,
+        file_bytes=file_bytes,
+        metadata=metadata,
+        ingestion_config={
+            "encoding": ingestion_config.encoding,
+            "delimiter": ingestion_config.delimiter,
+            "quote_character": ingestion_config.quote_character,
+            "parsing_mode": ingestion_config.parsing_mode,
+            "analysis_mode": ingestion_config.analysis_mode,
+            "header_row": ingestion_config.header_row,
+            "missing_value_tokens": ingestion_config.missing_value_tokens,
+            "chunk_size": ingestion_config.chunk_size,
+            "sample_size": ingestion_config.sample_size,
+            "sample_seed": ingestion_config.sample_seed,
+        },
+        analysis_context_fingerprint=analysis_context_fingerprint,
     )
 
-    if (
-        previous_fingerprint is not None
-        and previous_fingerprint != current_fingerprint
-    ):
-        had_previous_results = reset_analysis_results(st.session_state)
-        st.session_state.analysis_state_reset = (
-            had_previous_results
-        )
-
-    st.session_state.analysis_fingerprint = (
-        current_fingerprint
+    previous_input_fingerprint = st.session_state.analysis_input_fingerprint
+    input_changed = (
+        previous_input_fingerprint is not None
+        and previous_input_fingerprint != current_input_fingerprint
     )
+    context_changed = (
+        previous_context_fingerprint is not None
+        and previous_context_fingerprint != analysis_context_fingerprint
+    )
+    had_previous_results = update_analysis_fingerprint(
+        st.session_state,
+        current_fingerprint,
+        reset_metadata_validation=input_changed,
+    )
+    st.session_state.analysis_state_reset = had_previous_results
+    st.session_state.analysis_input_fingerprint = current_input_fingerprint
+    st.session_state.analysis_context = analysis_context.to_dict()
+    st.session_state.analysis_context_fingerprint = analysis_context_fingerprint
 
     if st.session_state.analysis_state_reset:
         st.warning(
-            "Input CSV atau metadata telah berubah. "
+            "Input CSV, metadata, konfigurasi aktif, atau konteks analisis telah berubah. "
             "Evidence kebijakan dan analisis Gemini sebelumnya "
             "telah dihapus. Jalankan kembali proses evidence "
             "dan analisis Gemini."
@@ -887,7 +964,7 @@ def main() -> None:
         st.session_state.contextual_validation = run_contextual_validation(
             dataframe,
             metadata,
-            profile="healthcare",
+            selected_domain=analysis_context.selected_domain,
             ingestion=ingestion,
         )
         st.session_state.contextual_validation_completed = True

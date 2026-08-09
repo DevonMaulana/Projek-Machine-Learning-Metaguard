@@ -9,7 +9,9 @@ import pytest
 
 from core.cross_column_rules import run_cross_column_validation
 from core.domain_rule_engine import (
+    EVALUATOR_ALLOWLIST,
     RULE_STATE_EVALUATED,
+    RULE_STATE_ERROR,
     RULE_STATE_SKIPPED_AMBIGUOUS_CONCEPT,
     RULE_STATE_SKIPPED_MISSING_CONCEPT,
     run_domain_rule_validation,
@@ -149,3 +151,15 @@ def test_engine_is_deterministic_and_summary_is_json_safe() -> None:
     assert first.to_dict() == second.to_dict()
     assert first.rule_results[1].state == RULE_STATE_EVALUATED
     json.dumps(first.to_dict(), ensure_ascii=False)
+
+
+def test_evaluator_failure_is_reported_as_a_rule_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing_evaluator(*_args: object) -> object:
+        raise RuntimeError("controlled evaluator failure")
+
+    monkeypatch.setitem(EVALUATOR_ALLOWLIST, "health_bed_capacity_consistency", failing_evaluator)
+    dataframe = pd.DataFrame({"tempat_tidur_terisi": [20], "kapasitas_rawat_inap": [10]})
+    result = run_domain_rule_validation(dataframe, selected_domain="healthcare")
+    bed_result = next(item for item in result.rule_results if item.rule_id == "HEALTH-BED-CAPACITY-001")
+    assert bed_result.state == RULE_STATE_ERROR
+    assert bed_result.error == "controlled evaluator failure"

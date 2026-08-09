@@ -28,7 +28,11 @@ def normalize_ingestion_config(ingestion_config: dict[str, Any] | None) -> dict[
     return normalized
 
 
-def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
+def reset_analysis_results(
+    session_state: MutableMapping[str, Any],
+    *,
+    reset_metadata_validation: bool = True,
+) -> bool:
     """Clear results derived from a CSV or parsing configuration."""
     keys = (
         "policy_evidence",
@@ -38,13 +42,12 @@ def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
         "gemini_analysis",
         "evidence_review",
         "report_payload",
-        "metadata_validation_completed",
         "contextual_validation_completed",
         "contextual_validation",
         "agent_state",
         "agent_decision",
         "agent_audit",
-    )
+    ) + (("metadata_validation_completed",) if reset_metadata_validation else ())
     had_results = any(bool(session_state.get(key)) for key in keys)
     session_state["policy_evidence"] = []
     session_state["policy_evidence_retrieval_completed"] = False
@@ -53,7 +56,8 @@ def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
     session_state["gemini_analysis"] = {}
     session_state["evidence_review"] = {}
     session_state["report_payload"] = {}
-    session_state["metadata_validation_completed"] = False
+    if reset_metadata_validation:
+        session_state["metadata_validation_completed"] = False
     session_state["contextual_validation_completed"] = False
     session_state["contextual_validation"] = {}
     session_state["agent_state"] = None
@@ -62,11 +66,31 @@ def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
     return had_results
 
 
+def update_analysis_fingerprint(
+    session_state: MutableMapping[str, Any],
+    current_fingerprint: str,
+    *,
+    reset_metadata_validation: bool = True,
+) -> bool:
+    """Reset derived state once when the composite analysis fingerprint changes."""
+    previous_fingerprint = session_state.get("analysis_fingerprint")
+    changed = previous_fingerprint is not None and previous_fingerprint != current_fingerprint
+    had_results = False
+    if changed:
+        had_results = reset_analysis_results(
+            session_state,
+            reset_metadata_validation=reset_metadata_validation,
+        )
+    session_state["analysis_fingerprint"] = current_fingerprint
+    return had_results
+
+
 def build_analysis_fingerprint(
     file_name: str,
     file_bytes: bytes,
     metadata: dict[str, Any],
     ingestion_config: dict[str, Any] | None = None,
+    analysis_context_fingerprint: str | None = None,
 ) -> str:
     """Build a deterministic fingerprint from CSV content and metadata."""
     normalized_metadata = {
@@ -79,6 +103,7 @@ def build_analysis_fingerprint(
         "file_sha256": hashlib.sha256(file_bytes).hexdigest(),
         "metadata": normalized_metadata,
         "ingestion_config": normalize_ingestion_config(ingestion_config),
+        "analysis_context_fingerprint": analysis_context_fingerprint,
     }
 
     serialized = json.dumps(

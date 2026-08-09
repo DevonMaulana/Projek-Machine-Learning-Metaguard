@@ -177,7 +177,7 @@ def _evaluate_legacy_rule(
                 concept_registry,
             )
         )
-    except (TypeError, ValueError, KeyError) as error:
+    except Exception as error:  # Preserve a per-rule error state for future integrations.
         return RuleExecutionResult(rule.rule_id, RULE_STATE_ERROR, (), required, str(error))
     state = RULE_STATE_EVALUATED if evaluated else RULE_STATE_NOT_APPLICABLE
     return RuleExecutionResult(
@@ -258,7 +258,18 @@ def run_domain_rule_validation(
         if evaluator is None:  # Defensive guard even though registry validation rejects it.
             results.append(RuleExecutionResult(rule.rule_id, RULE_STATE_ERROR, (), rule_columns, "evaluator_id tidak dikenal"))
             continue
-        results.append(evaluator(dataframe, rule, resolved, active_concepts))
+        try:
+            results.append(evaluator(dataframe, rule, resolved, active_concepts))
+        except Exception as error:  # Do not let one controlled rule crash generic checks.
+            results.append(
+                RuleExecutionResult(
+                    rule.rule_id,
+                    RULE_STATE_ERROR,
+                    (),
+                    rule_columns,
+                    str(error),
+                )
+            )
     results_tuple = tuple(results)
     evaluated = sum(result.state == RULE_STATE_EVALUATED for result in results_tuple)
     skipped = sum(result.state != RULE_STATE_EVALUATED for result in results_tuple)

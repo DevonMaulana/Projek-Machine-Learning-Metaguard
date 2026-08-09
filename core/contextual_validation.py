@@ -8,6 +8,8 @@ from typing import Any
 import pandas as pd
 
 from core.cross_column_rules import run_cross_column_validation
+from core.domain_models import DomainId, validate_domain_id
+from core.domain_rule_engine import run_domain_rule_validation
 from core.evidence_sanitizer import sanitize_evidence
 
 MINIMUM_VALID_DATE_VALUES = 3
@@ -241,6 +243,7 @@ def run_contextual_validation(
     metadata: dict[str, Any],
     *,
     profile: str = "healthcare",
+    selected_domain: DomainId | str | None = None,
     ingestion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run deterministic preliminary consistency rules without mutating inputs.
@@ -252,9 +255,27 @@ def run_contextual_validation(
     context = _analysis_context(dataframe, ingestion)
     period_findings, period_evaluated = _period_consistency(dataframe, metadata)
     geography_findings, geography_evaluated = _geographic_consistency(dataframe, metadata)
-    cross = run_cross_column_validation(dataframe, profile=profile)
-    findings = [*period_findings, *geography_findings, *cross["findings"]]
-    evaluated = period_evaluated + geography_evaluated + int(cross["evaluated_rules"])
+    if selected_domain is None:
+        # Compatibility bridge for v0.2 callers while the app moves to explicit
+        # domain selection.  The legacy cross-column module remains intact.
+        cross = run_cross_column_validation(dataframe, profile=profile)
+        domain_execution: dict[str, Any] | None = None
+        domain_findings = cross["findings"]
+        domain_evaluated = int(cross["evaluated_rules"])
+        active_profile = profile
+    else:
+        domain_id = validate_domain_id(selected_domain)
+        execution = run_domain_rule_validation(dataframe, selected_domain=domain_id)
+        domain_execution = execution.to_dict()
+        domain_findings = [
+            finding
+            for result in execution.rule_results
+            for finding in result.findings
+        ]
+        domain_evaluated = execution.rules_evaluated
+        active_profile = domain_id.value
+    findings = [*period_findings, *geography_findings, *domain_findings]
+    evaluated = period_evaluated + geography_evaluated + domain_evaluated
     if findings:
         status = "potential_inconsistency"
     elif evaluated:
@@ -266,8 +287,10 @@ def run_contextual_validation(
         "finding_count": len(findings),
         "findings": findings,
         "metadata_rules_evaluated": period_evaluated + geography_evaluated,
-        "cross_column_rules_evaluated": cross["evaluated_rules"],
-        "profile": profile,
+        "cross_column_rules_evaluated": domain_evaluated,
+        "profile": active_profile,
+        "selected_domain": selected_domain.value if isinstance(selected_domain, DomainId) else selected_domain,
+        "domain_rule_execution": domain_execution,
         **context,
     }
 
