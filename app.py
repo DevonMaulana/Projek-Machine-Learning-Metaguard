@@ -1358,12 +1358,22 @@ def main() -> None:
         ingestion=ingestion,
         evidence_sufficiency=st.session_state.evidence_sufficiency,
         retrieval_attempts=st.session_state.retrieval_attempts,
+        analysis_context={
+            **analysis_context.to_dict(),
+            "analysis_context_fingerprint": analysis_context_fingerprint,
+        },
+        evidence_workflows_v3=st.session_state.evidence_workflow_results_v3,
+        evidence_pool_v3=st.session_state.evidence_pool_v3,
+        evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
+        human_approval=(st.session_state.gemini_approval_fingerprint == current_fingerprint),
     )
-    report_ready = bool(evidence_review)
-    if not report_ready:
-        st.info("Selesaikan review traceability sebelum membuat laporan JSON.")
-    if report_ready:
-        st.session_state.report_payload = report
+    report_ready = True
+    if not evidence_review:
+        st.info(
+            "Laporan deterministik tersedia. Bagian Gemini dan traceability akan tetap kosong "
+            "sampai analisis yang disetujui manusia serta review traceability dijalankan."
+        )
+    st.session_state.report_payload = report
     st.download_button(
         "Unduh laporan JSON",
         data=json.dumps(

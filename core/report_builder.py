@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.report_provenance import build_v3_report_metadata
+
 
 def build_report(
     profile: dict[str, Any],
@@ -22,6 +24,11 @@ def build_report(
     gemini_analysis: dict[str, Any] | None = None,
     evidence_review: dict[str, Any] | None = None,
     ingestion: dict[str, Any] | None = None,
+    analysis_context: dict[str, Any] | None = None,
+    evidence_workflows_v3: list[dict[str, Any]] | None = None,
+    evidence_pool_v3: list[dict[str, Any]] | None = None,
+    evidence_ready_v3: bool = False,
+    human_approval: bool = False,
 ) -> dict[str, Any]:
     """Combine analysis outputs into a JSON-serializable report."""
     by_severity = score.get(
@@ -30,7 +37,7 @@ def build_report(
     )
 
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "generated_at": datetime.now(
             timezone.utc
         ).isoformat(),
@@ -53,6 +60,16 @@ def build_report(
         "gemini_analysis": gemini_analysis or {},
         "evidence_review": evidence_review or {},
         "ingestion": ingestion or {},
+        "v3_metadata": build_v3_report_metadata(
+            analysis_context=analysis_context,
+            contextual_validation=contextual_validation,
+            evidence_workflows=evidence_workflows_v3 or [],
+            evidence_pool=evidence_pool_v3 or [],
+            evidence_ready=evidence_ready_v3,
+            human_approval=human_approval,
+            gemini_analysis=gemini_analysis,
+            evidence_review=evidence_review,
+        ),
     }
 
 

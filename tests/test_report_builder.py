@@ -392,7 +392,7 @@ def test_report_contains_contextual_validation() -> None:
         "findings": [{"check_id": "internet_status_vs_bandwidth"}],
     }
     report = build_report({}, [], {"score": 100, "findings_by_severity": {}}, contextual_validation=contextual)
-    assert report["schema_version"] == "1.0"
+    assert report["schema_version"] == "1.1"
     assert report["contextual_validation"] == contextual
     json.dumps(report)
 

@@ -155,6 +155,7 @@ def _enrich_findings(
                 "resolved_columns": [column.to_dict() for column in resolved_columns],
                 "human_review_required": rule.human_review_required,
                 "policy_requirement": rule.policy_requirement,
+                "interpretation_note": rule.interpretation_note,
             }
         )
         enriched.append(item)
