@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "rules": [
+    {
+      "rule_id": "HEALTH-BED-CAPACITY-001",
+      "domain_id": "healthcare",
+      "rule_pack_id": "healthcare_core",
+      "name": "Kapasitas tempat tidur",
+      "description": "Tempat tidur terisi tidak boleh melebihi kapasitas rawat inap.",
+      "severity": "high",
+      "rule_type": "cross_column",
+      "required_concepts": ["occupied_beds", "inpatient_capacity"],
+      "evaluator_id": "health_bed_capacity_consistency",
+      "provenance_type": "DETERMINISTIC_INVARIANT",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Kondisi relasional deterministik MetaGuard; verifikasi manusia tetap diperlukan untuk konteks operasional."
+    },
+    {
+      "rule_id": "HEALTH-INTERNET-BANDWIDTH-001",
+      "domain_id": "healthcare",
+      "rule_pack_id": "healthcare_core",
+      "name": "Konsistensi internet",
+      "description": "Status tanpa internet berpotensi tidak konsisten dengan bandwidth positif.",
+      "severity": "medium",
+      "rule_type": "cross_column",
+      "required_concepts": ["internet_status", "bandwidth_mbps"],
+      "evaluator_id": "health_internet_bandwidth_consistency",
+      "provenance_type": "HEURISTIC",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Potential inconsistency deterministik MetaGuard, bukan kesimpulan regulasi atau kepatuhan."
+    }
+  ]
+}
