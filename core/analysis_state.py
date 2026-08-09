@@ -30,12 +30,35 @@ def normalize_ingestion_config(ingestion_config: dict[str, Any] | None) -> dict[
 
 def reset_analysis_results(session_state: MutableMapping[str, Any]) -> bool:
     """Clear results derived from a CSV or parsing configuration."""
-    keys = ("policy_evidence", "gemini_analysis", "evidence_review", "report_payload")
+    keys = (
+        "policy_evidence",
+        "policy_evidence_retrieval_completed",
+        "evidence_sufficiency",
+        "retrieval_attempts",
+        "gemini_analysis",
+        "evidence_review",
+        "report_payload",
+        "metadata_validation_completed",
+        "contextual_validation_completed",
+        "contextual_validation",
+        "agent_state",
+        "agent_decision",
+        "agent_audit",
+    )
     had_results = any(bool(session_state.get(key)) for key in keys)
     session_state["policy_evidence"] = []
+    session_state["policy_evidence_retrieval_completed"] = False
+    session_state["evidence_sufficiency"] = {}
+    session_state["retrieval_attempts"] = []
     session_state["gemini_analysis"] = {}
     session_state["evidence_review"] = {}
     session_state["report_payload"] = {}
+    session_state["metadata_validation_completed"] = False
+    session_state["contextual_validation_completed"] = False
+    session_state["contextual_validation"] = {}
+    session_state["agent_state"] = None
+    session_state["agent_decision"] = None
+    session_state["agent_audit"] = []
     return had_results
 
 

@@ -26,6 +26,7 @@ def test_build_and_save_report(tmp_path) -> None:
     assert report["gemini_analysis"] == {}
     assert report["evidence_review"] == {}
     assert report["ingestion"] == {}
+    assert report["contextual_validation"] == {}
 
     json.dumps(report)
 
@@ -381,6 +382,46 @@ def test_report_contains_ingestion_diagnostics() -> None:
         ingestion=ingestion,
     )
     assert report["ingestion"] == ingestion
+    json.dumps(report)
+
+
+def test_report_contains_contextual_validation() -> None:
+    contextual = {
+        "status": "potential_inconsistency",
+        "finding_count": 1,
+        "findings": [{"check_id": "internet_status_vs_bandwidth"}],
+    }
+    report = build_report({}, [], {"score": 100, "findings_by_severity": {}}, contextual_validation=contextual)
+    assert report["schema_version"] == "1.0"
+    assert report["contextual_validation"] == contextual
+    json.dumps(report)
+
+
+def test_report_preserves_contextual_sampling_context() -> None:
+    contextual = {
+        "status": "potential_inconsistency",
+        "analysis_scope": "sampled",
+        "rows_evaluated": 2_000,
+        "total_rows": 12_000,
+        "finding_count": 1,
+        "findings": [{"affected_rows": 3}],
+    }
+    report = build_report({}, [], {"score": 100, "findings_by_severity": {}}, contextual_validation=contextual)
+    assert report["contextual_validation"]["analysis_scope"] == "sampled"
+    assert report["contextual_validation"]["rows_evaluated"] == 2_000
+    assert report["contextual_validation"]["findings"][0]["affected_rows"] == 3
+
+
+def test_report_contains_evidence_sufficiency_and_lightweight_attempts() -> None:
+    sufficiency = {"status": "sufficient", "score": 90.0, "unique_evidence_count": 2}
+    attempts = [{"attempt_number": 1, "queries": ["metadata"], "sufficiency_status": "sufficient"}]
+    report = build_report(
+        {}, [], {"score": 100, "findings_by_severity": {}},
+        evidence_sufficiency=sufficiency,
+        retrieval_attempts=attempts,
+    )
+    assert report["evidence_sufficiency"] == sufficiency
+    assert report["retrieval_attempts"] == attempts
     json.dumps(report)
 
 

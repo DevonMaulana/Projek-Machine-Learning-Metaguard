@@ -1,8 +1,10 @@
 import copy
 import json
 
+import pandas as pd
 import pytest
 
+from core.quality_checker import run_quality_checks
 from core.scoring import calculate_score
 
 
@@ -71,3 +73,21 @@ def test_representative_small_impact_fixture_is_low_but_not_zero():
     result = calculate_score(findings)
     assert 0 < result["score"] < 60
     assert result["total_findings"] == 28
+
+
+def test_valid_negative_coordinates_do_not_reduce_quality_score():
+    findings = run_quality_checks(
+        pd.DataFrame(
+            {
+                "latitude": [-7.3, -7.4, -7.5, -7.6, -7.7],
+                "longitude": [-110.1, -110.2, -110.3, -110.4, -110.5],
+            }
+        )
+    )
+
+    assert not [
+        finding
+        for finding in findings
+        if finding["check_id"] == "negative_numeric"
+    ]
+    assert calculate_score(findings)["score"] == calculate_score([])["score"]

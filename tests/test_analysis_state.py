@@ -118,11 +118,39 @@ def test_fingerprint_only_uses_active_chunk_and_sample_settings() -> None:
     assert sampled_one != sampled_other_seed
 
 
+def test_fingerprint_mode_transition_and_active_chunk_settings_are_explicit() -> None:
+    common = {"file_name": "data.csv", "file_bytes": b"id\n1", "metadata": {}}
+    exact = build_analysis_fingerprint(**common, ingestion_config={"analysis_mode": "exact"})
+    sampled = build_analysis_fingerprint(
+        **common,
+        ingestion_config={"analysis_mode": "sampled", "sample_size": 10, "sample_seed": 42},
+    )
+    chunked_one = build_analysis_fingerprint(
+        **common,
+        ingestion_config={"analysis_mode": "chunked", "chunk_size": 1_000, "sample_size": 10},
+    )
+    chunked_two = build_analysis_fingerprint(
+        **common,
+        ingestion_config={"analysis_mode": "chunked", "chunk_size": 2_000, "sample_size": 99},
+    )
+    assert exact != sampled
+    assert chunked_one != chunked_two
+
+
 def test_reset_analysis_results_only_clears_derived_outputs() -> None:
-    state = {"policy_evidence": [{"query": "x"}], "gemini_analysis": {"summary": "x"}, "evidence_review": {"status": "valid"}, "report_payload": {"schema_version": "1.0"}, "other": "keep"}
+    state = {"policy_evidence": [{"query": "x"}], "policy_evidence_retrieval_completed": True, "evidence_sufficiency": {"status": "sufficient"}, "retrieval_attempts": [{"attempt_number": 1}], "gemini_analysis": {"summary": "x"}, "evidence_review": {"status": "valid"}, "report_payload": {"schema_version": "1.0"}, "metadata_validation_completed": True, "contextual_validation_completed": True, "contextual_validation": {"finding_count": 1}, "agent_state": {"stage": "COMPLETE"}, "agent_decision": {"action": "NONE"}, "agent_audit": [{"step": 1}], "other": "keep"}
     assert reset_analysis_results(state) is True
     assert state["policy_evidence"] == []
     assert state["gemini_analysis"] == {}
     assert state["evidence_review"] == {}
     assert state["report_payload"] == {}
+    assert state["policy_evidence_retrieval_completed"] is False
+    assert state["evidence_sufficiency"] == {}
+    assert state["retrieval_attempts"] == []
+    assert state["metadata_validation_completed"] is False
+    assert state["contextual_validation_completed"] is False
+    assert state["contextual_validation"] == {}
+    assert state["agent_state"] is None
+    assert state["agent_decision"] is None
+    assert state["agent_audit"] == []
     assert state["other"] == "keep"

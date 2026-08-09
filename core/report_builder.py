@@ -15,7 +15,10 @@ def build_report(
     source: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
     metadata_validation: dict[str, Any] | None = None,
+    contextual_validation: dict[str, Any] | None = None,
     policy_evidence: list[dict[str, Any]] | None = None,
+    evidence_sufficiency: dict[str, Any] | None = None,
+    retrieval_attempts: list[dict[str, Any]] | None = None,
     gemini_analysis: dict[str, Any] | None = None,
     evidence_review: dict[str, Any] | None = None,
     ingestion: dict[str, Any] | None = None,
@@ -43,7 +46,10 @@ def build_report(
         "metadata_validation": (
             metadata_validation or {}
         ),
+        "contextual_validation": contextual_validation or {},
         "policy_evidence": policy_evidence or [],
+        "evidence_sufficiency": evidence_sufficiency or {},
+        "retrieval_attempts": retrieval_attempts or [],
         "gemini_analysis": gemini_analysis or {},
         "evidence_review": evidence_review or {},
         "ingestion": ingestion or {},
