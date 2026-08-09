@@ -47,6 +47,7 @@ def _build_analysis_payload(
     metadata_validation: dict[str, Any],
     policy_evidence: list[dict[str, Any]],
     ingestion: dict[str, Any] | None = None,
+    analysis_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a compact JSON-safe payload for Gemini."""
     return {
@@ -72,6 +73,7 @@ def _build_analysis_payload(
             "sampling_applied": (ingestion or {}).get("sampling_applied", False),
             "warnings": (ingestion or {}).get("warnings", []),
         },
+        "analysis_context": analysis_context or {},
     }
 
 
@@ -82,6 +84,7 @@ def analyze_with_gemini(
     metadata_validation: dict[str, Any],
     policy_evidence: list[dict[str, Any]],
     ingestion: dict[str, Any] | None = None,
+    analysis_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Analyze MetaGuard results using one Gemini API call.
@@ -111,6 +114,7 @@ def analyze_with_gemini(
         metadata_validation=metadata_validation,
         policy_evidence=policy_evidence,
         ingestion=ingestion,
+        analysis_context=analysis_context,
     )
 
     sampling_instruction = ""
@@ -148,6 +152,9 @@ Tugas:
 13. Jangan mengubah count atau percentage, membuat temuan baru, menyebut kolom
     atau evidence yang tidak ada pada payload, atau memberikan keputusan maupun
     kesimpulan kepatuhan hukum.
+14. Temuan deterministik pada payload bersifat authoritative. Evidence hanya
+    konteks kebijakan pendukung; kecukupan evidence bukan bukti kepatuhan.
+15. Cite hanya chunk_id, source, dan page yang tersedia pada policy_evidence.
 """ + sampling_instruction
 
     client = genai.Client(api_key=api_key)

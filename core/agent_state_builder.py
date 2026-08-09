@@ -24,6 +24,9 @@ def build_agent_state(
     policy_evidence: list[dict[str, Any]] | None = None,
     policy_evidence_retrieval_completed: bool = False,
     evidence_sufficiency: dict[str, Any] | None = None,
+    evidence_workflow_v3_completed: bool = False,
+    evidence_ready_v3: bool = False,
+    evidence_workflow_v3_state: str | None = None,
     retrieval_attempts: list[dict[str, Any]] | None = None,
     gemini_analysis: dict[str, Any] | None = None,
     evidence_review: dict[str, Any] | None = None,
@@ -56,6 +59,9 @@ def build_agent_state(
         evidence_sufficiency_evaluated=bool(sufficiency),
         evidence_sufficiency_status=sufficiency.get("status"),
         evidence_sufficiency_score=sufficiency.get("score"),
+        evidence_workflow_v3_completed=evidence_workflow_v3_completed,
+        evidence_ready_v3=evidence_ready_v3,
+        evidence_workflow_v3_state=evidence_workflow_v3_state,
         retrieval_attempt_count=len(attempts),
         retrieval_retry_available=(
             bool(sufficiency)

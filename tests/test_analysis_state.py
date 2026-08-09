@@ -1,4 +1,8 @@
-from core.analysis_state import build_analysis_fingerprint, reset_analysis_results
+from core.analysis_state import (
+    build_analysis_fingerprint,
+    reset_analysis_results,
+    update_analysis_fingerprint,
+)
 
 
 def test_fingerprint_is_deterministic() -> None:
@@ -154,3 +158,42 @@ def test_reset_analysis_results_only_clears_derived_outputs() -> None:
     assert state["agent_decision"] is None
     assert state["agent_audit"] == []
     assert state["other"] == "keep"
+
+
+def test_context_fingerprint_changes_composite_analysis_fingerprint() -> None:
+    common = {"file_name": "data.csv", "file_bytes": b"id\n1", "metadata": {}}
+    generic = build_analysis_fingerprint(**common, analysis_context_fingerprint="generic")
+    healthcare = build_analysis_fingerprint(**common, analysis_context_fingerprint="healthcare")
+    assert generic != healthcare
+
+
+def test_same_fingerprint_preserves_state_and_context_change_resets_dependents() -> None:
+    state = {
+        "analysis_fingerprint": "context-a",
+        "policy_evidence": [{"query": "x"}],
+        "policy_evidence_retrieval_completed": True,
+        "evidence_sufficiency": {"status": "sufficient"},
+        "retrieval_attempts": [{"attempt_number": 1}],
+        "gemini_analysis": {"summary": "x"},
+        "evidence_review": {"status": "valid"},
+        "report_payload": {"schema_version": "1.0"},
+        "metadata_validation_completed": True,
+        "contextual_validation_completed": True,
+        "contextual_validation": {"finding_count": 1},
+        "agent_state": {"stage": "COMPLETE"},
+        "agent_decision": {"action": "NONE"},
+        "agent_audit": [{"step": 1}],
+    }
+    assert update_analysis_fingerprint(state, "context-a", reset_metadata_validation=False) is False
+    assert state["policy_evidence"] == [{"query": "x"}]
+
+    assert update_analysis_fingerprint(state, "context-b", reset_metadata_validation=False) is True
+    assert state["policy_evidence"] == []
+    assert state["evidence_sufficiency"] == {}
+    assert state["gemini_analysis"] == {}
+    assert state["evidence_review"] == {}
+    assert state["report_payload"] == {}
+    assert state["contextual_validation"] == {}
+    assert state["agent_state"] is None
+    assert state["agent_audit"] == []
+    assert state["metadata_validation_completed"] is True

@@ -62,6 +62,9 @@ class AgentState:
     evidence_sufficiency_evaluated: bool = False
     evidence_sufficiency_status: str | None = None
     evidence_sufficiency_score: float | None = None
+    evidence_workflow_v3_completed: bool = False
+    evidence_ready_v3: bool = False
+    evidence_workflow_v3_state: str | None = None
     retrieval_attempt_count: int = 0
     retrieval_retry_available: bool = False
     gemini_analysis_completed: bool = False

@@ -6,6 +6,7 @@ import json
 
 import pandas as pd
 
+from core.cross_column_rules import run_cross_column_validation
 from core.contextual_validation import run_contextual_validation
 
 
@@ -202,3 +203,67 @@ def test_contextual_summary_uses_effective_ingestion_scope_without_scaling_findi
     assert sampled["rows_evaluated"] == 2_000
     assert sampled["total_rows"] == 12_000
     assert _findings(sampled, "occupied_beds_exceed_capacity")[0]["affected_rows"] == 2_000
+
+
+def test_explicit_healthcare_domain_has_legacy_cross_column_parity() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "tempat_tidur_terisi": [11, 10],
+            "kapasitas_rawat_inap": [10, 10],
+            "status_internet": ["offline", "online"],
+            "bandwidth_mbps": [5, 5],
+        }
+    )
+    legacy = run_cross_column_validation(dataframe, profile="healthcare")
+    integrated = run_contextual_validation(
+        dataframe,
+        _metadata(data_period="", geographic_scope=""),
+        selected_domain="healthcare",
+    )
+    legacy_by_id = {finding["check_id"]: finding for finding in legacy["findings"]}
+    integrated_by_id = {finding["check_id"]: finding for finding in integrated["findings"]}
+    assert integrated_by_id.keys() == legacy_by_id.keys()
+    for check_id, finding in legacy_by_id.items():
+        assert integrated_by_id[check_id]["severity"] == finding["severity"]
+        assert integrated_by_id[check_id]["affected_rows"] == finding["affected_rows"]
+        assert integrated_by_id[check_id]["percentage"] == finding["percentage"]
+        assert integrated_by_id[check_id]["title"] == finding["title"]
+        assert integrated_by_id[check_id]["evidence"] == finding["evidence"]
+
+
+def test_non_healthcare_domains_keep_generic_context_checks_without_healthcare_rules() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "tanggal": ["2026-01-01", "2026-02-01", "2026-03-01"],
+            "tempat_tidur_terisi": [20, 20, 20],
+            "kapasitas_rawat_inap": [10, 10, 10],
+        }
+    )
+    for domain in ("generic", "education", "environment", "other"):
+        result = run_contextual_validation(
+            dataframe,
+            _metadata(data_period="2025", geographic_scope=""),
+            selected_domain=domain,
+        )
+        assert _findings(result, "metadata_period_vs_dataset_dates")
+        assert not _findings(result, "occupied_beds_exceed_capacity")
+        expected_rule_count = 2 if domain == "education" else 1 if domain == "environment" else 0
+        assert result["domain_rule_execution"]["rules_total"] == expected_rule_count
+
+
+def test_contextual_validation_integrates_education_and_environment_pilots_without_cross_domain_leakage() -> None:
+    education = run_contextual_validation(
+        pd.DataFrame({"jumlah_siswa": [8], "jumlah_guru": [0], "jumlah_kelas": [1]}),
+        _metadata(data_period="", geographic_scope=""),
+        selected_domain="education",
+    )
+    assert _findings(education, "student_count_without_teacher")
+    assert not _findings(education, "offline_sensor_with_measurement")
+
+    environment = run_contextual_validation(
+        pd.DataFrame({"status_sensor": ["offline"], "pm25": [12]}),
+        _metadata(data_period="", geographic_scope=""),
+        selected_domain="environment",
+    )
+    assert _findings(environment, "offline_sensor_with_measurement")
+    assert not _findings(environment, "student_count_without_teacher")

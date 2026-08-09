@@ -39,3 +39,27 @@ def sanitize_evidence(evidence: Iterable[Any]) -> list[Any]:
             safe_value = safe_value[:MAX_EVIDENCE_STRING_LENGTH] + TRUNCATION_MARKER
         sanitized.append(safe_value)
     return sanitized
+
+
+def sanitize_policy_evidence_for_gemini(
+    policy_evidence: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Bound Gemini-facing evidence while preserving citation identity metadata."""
+    bounded: list[dict[str, Any]] = []
+    for item in policy_evidence:
+        if not isinstance(item, dict) or len(bounded) >= MAX_EVIDENCE_ITEMS:
+            continue
+        text = _json_safe_value(item.get("text", ""))
+        if isinstance(text, str) and len(text) > MAX_EVIDENCE_STRING_LENGTH:
+            text = text[:MAX_EVIDENCE_STRING_LENGTH] + TRUNCATION_MARKER
+        clean = {
+            "chunk_id": str(item.get("chunk_id", "")).strip(),
+            "source": str(item.get("source", "")).strip(),
+            "page": _json_safe_value(item.get("page")),
+            "text": text,
+        }
+        for key in ("policy_id", "policy_pack", "domain_id", "document_type"):
+            if key in item:
+                clean[key] = str(item.get(key, "")).strip()
+        bounded.append(clean)
+    return bounded

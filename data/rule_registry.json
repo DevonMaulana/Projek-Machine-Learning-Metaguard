@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "rules": [
+    {
+      "rule_id": "HEALTH-BED-CAPACITY-001",
+      "domain_id": "healthcare",
+      "rule_pack_id": "healthcare_core",
+      "name": "Kapasitas tempat tidur",
+      "description": "Tempat tidur terisi tidak boleh melebihi kapasitas rawat inap.",
+      "severity": "high",
+      "rule_type": "cross_column",
+      "required_concepts": ["occupied_beds", "inpatient_capacity"],
+      "evaluator_id": "health_bed_capacity_consistency",
+      "provenance_type": "DETERMINISTIC_INVARIANT",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Kondisi relasional deterministik MetaGuard; verifikasi manusia tetap diperlukan untuk konteks operasional."
+    },
+    {
+      "rule_id": "HEALTH-INTERNET-BANDWIDTH-001",
+      "domain_id": "healthcare",
+      "rule_pack_id": "healthcare_core",
+      "name": "Konsistensi internet",
+      "description": "Status tanpa internet berpotensi tidak konsisten dengan bandwidth positif.",
+      "severity": "medium",
+      "rule_type": "cross_column",
+      "required_concepts": ["internet_status", "bandwidth_mbps"],
+      "evaluator_id": "health_internet_bandwidth_consistency",
+      "provenance_type": "HEURISTIC",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Potential inconsistency deterministik MetaGuard, bukan kesimpulan regulasi atau kepatuhan."
+    },
+    {
+      "rule_id": "EDU-STUDENT-TEACHER-001",
+      "domain_id": "education",
+      "rule_pack_id": "education_core",
+      "name": "Konsistensi siswa dan guru",
+      "description": "Jumlah siswa positif dengan jumlah guru nol berpotensi tidak konsisten dan perlu verifikasi manusia.",
+      "severity": "medium",
+      "rule_type": "cross_column",
+      "required_concepts": ["student_count", "teacher_count"],
+      "evaluator_id": "education_student_without_teacher",
+      "provenance_type": "HEURISTIC",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Heuristik konsistensi data MetaGuard; bukan standar pendidikan atau kesimpulan kepatuhan."
+    },
+    {
+      "rule_id": "EDU-STUDENT-CLASSROOM-001",
+      "domain_id": "education",
+      "rule_pack_id": "education_core",
+      "name": "Konsistensi siswa dan kelas",
+      "description": "Jumlah siswa positif dengan jumlah kelas nol berpotensi tidak konsisten dan perlu verifikasi manusia.",
+      "severity": "medium",
+      "rule_type": "cross_column",
+      "required_concepts": ["student_count", "classroom_count"],
+      "evaluator_id": "education_student_without_classroom",
+      "provenance_type": "HEURISTIC",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Heuristik konsistensi data MetaGuard; bukan standar pendidikan atau kesimpulan kepatuhan."
+    },
+    {
+      "rule_id": "ENV-SENSOR-MEASUREMENT-001",
+      "domain_id": "environment",
+      "rule_pack_id": "environment_core",
+      "name": "Konsistensi status sensor dan pengukuran",
+      "description": "Status sensor offline/nonaktif dengan pengukuran numerik pada baris yang sama berpotensi tidak konsisten dan perlu verifikasi manusia.",
+      "severity": "low",
+      "rule_type": "cross_column",
+      "required_concepts": ["sensor_status"],
+      "optional_concepts": ["ph_measurement", "pm25_measurement", "pm10_measurement"],
+      "evaluator_id": "environment_offline_sensor_with_measurement",
+      "provenance_type": "HEURISTIC",
+      "policy_requirement": false,
+      "human_review_required": true,
+      "interpretation_note": "Heuristik konsistensi data MetaGuard; pengukuran historis dapat tetap sah tanpa konteks waktu, sehingga temuan bukan bukti data tidak valid atau kepatuhan."
+    }
+  ]
+}

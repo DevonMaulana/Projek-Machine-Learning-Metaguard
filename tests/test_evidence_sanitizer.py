@@ -6,7 +6,21 @@ from core.evidence_sanitizer import (
     MAX_EVIDENCE_STRING_LENGTH,
     TRUNCATION_MARKER,
     sanitize_evidence,
+    sanitize_policy_evidence_for_gemini,
 )
+
+
+def test_gemini_policy_evidence_keeps_identity_but_bounds_text() -> None:
+    result = sanitize_policy_evidence_for_gemini([
+        {"chunk_id": "a", "source": "policy.pdf", "page": 3, "text": "x" * 400, "policy_id": "P", "policy_pack": "healthcare", "domain_id": "healthcare", "document_type": "regulation"},
+        {"chunk_id": "b", "source": "policy.pdf", "page": 4, "text": "ok"},
+    ])
+    assert result[0]["chunk_id"] == "a"
+    assert result[0]["source"] == "policy.pdf"
+    assert result[0]["page"] == 3
+    assert result[0]["text"].endswith(TRUNCATION_MARKER)
+    assert len(result[0]["text"]) == MAX_EVIDENCE_STRING_LENGTH + len(TRUNCATION_MARKER)
+    assert result[1]["chunk_id"] == "b"
 from core.quality_checker import run_quality_checks
 
 
