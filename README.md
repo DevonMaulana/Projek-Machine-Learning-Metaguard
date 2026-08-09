@@ -1,11 +1,11 @@
 # MetaGuard
 
-MetaGuard v0.2 development / release candidate adalah *Policy-Grounded Agentic
-Data Quality Review System* untuk validasi awal dataset OPD/pemerintah daerah.
+MetaGuard v0.3 release candidate adalah *Domain-Aware Policy-Grounded Data
+Quality Review System* untuk validasi awal dataset OPD/pemerintah daerah.
 
-MetaGuard memadukan validation deterministik, contextual validation,
-policy-grounded RAG, orchestrator berbatas, Gemini dengan persetujuan manusia,
-dan traceability deterministik. MetaGuard bukan chatbot umum atau pengambil
+MetaGuard memadukan validation deterministik, konteks domain dan tata kelola
+eksplisit, policy-grounded retrieval lokal, orchestrator berbatas, Gemini dengan
+persetujuan manusia, dan traceability deterministik. MetaGuard bukan chatbot umum atau pengambil
 keputusan otonom. Temuan teknis utama selalu berasal dari aturan deterministik;
 Gemini hanya menyusun interpretasi dan rekomendasi dari hasil serta evidence
 yang tersedia.
@@ -27,9 +27,14 @@ pengganti auditor, dan bukan platform produksi pemerintah.
   deterministik.
 - Profil dataset, quality checks deterministik, dan quality score proporsional.
 - Validasi kelengkapan metadata serta contextual validation.
-- Rule healthcare: kapasitas rawat inap serta status internet/bandwidth.
-- Policy evidence retrieval lokal, evidence sufficiency deterministik, dan
-  bounded retrieval retry.
+- Profil domain eksplisit: `generic`, `healthcare`, `education`,
+  `environment`, dan `other`; governance context: `government_public` atau
+  `generic_non_government`.
+- Rule healthcare, serta pilot heuristic konservatif untuk education dan
+  environment; domain tidak diinfer otomatis dari kolom CSV.
+- Registry konsep/rule/policy, corpus kebijakan v3 enam dokumen terverifikasi,
+  routing deterministik, metadata-filtered retrieval, evidence sufficiency dan
+  alignment, serta bounded retry maksimal dua attempt per evidence need.
 - Controlled agentic orchestration dengan tool allowlist dan audit ringan.
 - Analisis Gemini terstruktur setelah persetujuan manusia eksplisit.
 - Evidence traceability deterministik dan laporan JSON.
@@ -213,16 +218,24 @@ docs/                  # testing, arsitektur, dan release preparation
 
 ## Output
 
-Laporan JSON `schema_version` `1.0` memuat source, profile, quality summary,
+Laporan JSON `schema_version` `1.1` memuat source, profile, quality summary,
 findings, score, metadata dan validasinya, contextual validation, policy
 evidence, evidence sufficiency, retrieval attempts, Gemini analysis, evidence
-review, dan ingestion diagnostics. Field v0.2 bersifat aditif sehingga tidak
-memerlukan breaking schema bump.
+review, ingestion diagnostics, serta `v3_metadata` untuk analysis context,
+provenance rule, evidence-need state, approval, Gemini, traceability, dan
+limitations. Field v0.2 tetap tersedia secara backward-compatible.
 
 ## Limitations
 
 - Research/coursework prototype, bukan production-ready system.
+- Rule education dan environment adalah pilot `HEURISTIC` yang membutuhkan
+  human review; absence of finding bukan kesimpulan domain valid.
 - Evidence sufficiency adalah heuristic retrieval, bukan legal/compliance score.
+- Policy evidence memberi konteks pendukung dari corpus terdaftar/current dan
+  terverifikasi; readiness evidence bukan kepatuhan atau validitas hukum.
+- Gemini opsional, hanya setelah readiness evidence dan approval eksplisit,
+  maksimal satu call untuk analysis state yang tidak berubah; temuan
+  deterministik tetap authoritative. Tidak ada AI-generated repair atau rule.
 - Chroma distance belum dipakai untuk sufficiency.
 - Contextual rules terbatas; geographic matching sengaja konservatif.
 - Parser tanggal quality checker menerima format terbatas.
