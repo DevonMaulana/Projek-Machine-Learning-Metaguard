@@ -51,6 +51,7 @@ class AgentExecutionContext:
     gemini_analysis: dict[str, Any] = field(default_factory=dict)
     evidence_review: dict[str, Any] = field(default_factory=dict)
     source: dict[str, Any] = field(default_factory=dict)
+    analysis_context: dict[str, Any] = field(default_factory=dict)
     retriever: Callable[..., list[dict[str, Any]]] = retrieve_policy_chunks
 
 
@@ -133,6 +134,7 @@ def _run_gemini_analysis(context: AgentExecutionContext) -> dict[str, Any]:
         metadata_validation=context.metadata_validation,
         policy_evidence=context.policy_evidence,
         ingestion=context.ingestion,
+        analysis_context=context.analysis_context,
     )
 
 

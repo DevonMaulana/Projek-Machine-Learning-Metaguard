@@ -81,6 +81,22 @@ def plan_next_action(state: AgentState) -> AgentDecision:
             AgentAction.EVALUATE_EVIDENCE,
             "Retrieval selesai tetapi sufficiency evidence belum dievaluasi.",
         )
+    if state.evidence_workflow_v3_completed:
+        if not state.evidence_ready_v3:
+            return AgentDecision(
+                AgentStage.EVIDENCE_REVIEW_REQUIRED,
+                AgentAction.NONE,
+                "Workflow evidence v3 selesai tetapi belum ready untuk interpretasi AI.",
+                state.evidence_workflow_v3_state or "Evidence v3 belum ready.",
+                True,
+            )
+        if not state.gemini_analysis_completed:
+            return AgentDecision(
+                AgentStage.ANALYSIS_READY,
+                AgentAction.RUN_GEMINI_ANALYSIS,
+                "Evidence v3 siap untuk review manusia dan analisis Gemini setelah approval eksplisit.",
+                requires_human_action=True,
+            )
     if state.evidence_sufficiency_status != "sufficient":
         if state.retrieval_retry_available:
             return AgentDecision(
@@ -150,6 +166,8 @@ def execute_decision(
             return _failure(decision, state, step, "Gemini tidak dapat dijalankan tanpa policy evidence.")
         if not state.evidence_sufficiency_evaluated or state.evidence_sufficiency_status != "sufficient":
             return _failure(decision, state, step, "Gemini hanya dapat dijalankan setelah evidence berstatus sufficient.")
+        if state.evidence_workflow_v3_completed and not state.evidence_ready_v3:
+            return _failure(decision, state, step, "Gemini hanya dapat dijalankan setelah evidence workflow v3 ready.")
     try:
         output = definition.handler(context)
     except Exception as error:  # Tool failures must become structured results.

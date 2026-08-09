@@ -39,6 +39,11 @@ def reset_analysis_results(
         "policy_evidence_retrieval_completed",
         "evidence_sufficiency",
         "retrieval_attempts",
+        "evidence_workflow_results_v3",
+        "evidence_pool_v3",
+        "evidence_ready_v3",
+        "gemini_policy_evidence",
+        "gemini_approval_fingerprint",
         "gemini_analysis",
         "evidence_review",
         "report_payload",
@@ -53,6 +58,11 @@ def reset_analysis_results(
     session_state["policy_evidence_retrieval_completed"] = False
     session_state["evidence_sufficiency"] = {}
     session_state["retrieval_attempts"] = []
+    session_state["evidence_workflow_results_v3"] = []
+    session_state["evidence_pool_v3"] = []
+    session_state["evidence_ready_v3"] = False
+    session_state["gemini_policy_evidence"] = []
+    session_state["gemini_approval_fingerprint"] = None
     session_state["gemini_analysis"] = {}
     session_state["evidence_review"] = {}
     session_state["report_payload"] = {}

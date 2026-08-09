@@ -30,13 +30,16 @@ from core.csv_ingestion import (
 from core.contextual_validation import run_contextual_validation
 from core.data_profiler import profile_dataframe
 from core.domain_models import DomainId, GovernanceContext
-from core.evidence_sufficiency import build_evidence_needs
+from core.evidence_sanitizer import sanitize_policy_evidence_for_gemini
+from core.product_evidence_v3 import (
+    evidence_pool_as_groups,
+    plan_product_evidence_needs,
+    run_product_evidence_workflows,
+)
 from core.metadata_validator import validate_metadata
-from core.policy_evidence import build_policy_queries, retrieve_with_bounded_retry
 from core.quality_checker import run_quality_checks
 from core.report_builder import build_report
 from core.scoring import calculate_score
-from rag.retriever import retrieve_policy_chunks
 
 
 @st.cache_data(max_entries=5, show_spinner=False)
@@ -146,6 +149,26 @@ def _show_policy_evidence(
                     f"Distance: {distance:.4f}"
                 )
                 st.write(text)
+
+
+def _show_v3_evidence_workflows(workflows: list[dict[str, Any]], evidence_ready: bool) -> None:
+    """Render compact v3 workflow state without exposing full internal payloads."""
+    st.subheader("Evidence workflow v3")
+    if not workflows:
+        st.info("Belum ada workflow evidence v3 yang dijalankan.")
+        return
+    if evidence_ready:
+        st.success("Evidence siap untuk review manusia sebelum analisis Gemini.")
+    else:
+        st.warning("Evidence kebijakan belum sufficiently ready untuk interpretasi AI.")
+    for workflow in workflows:
+        request = workflow.get("request", {})
+        assessment = workflow.get("final_assessment", {})
+        st.caption(
+            f"{request.get('evidence_need', '')}: {workflow.get('workflow_state', '')} "
+            f"Â· attempts {workflow.get('attempt_count', 0)} "
+            f"Â· score {assessment.get('sufficiency', {}).get('score', '-')}"
+        )
 
 
 def _show_evidence_sufficiency(
@@ -496,6 +519,17 @@ def main() -> None:
 
     if "retrieval_attempts" not in st.session_state:
         st.session_state.retrieval_attempts = []
+
+    if "evidence_workflow_results_v3" not in st.session_state:
+        st.session_state.evidence_workflow_results_v3 = []
+    if "evidence_pool_v3" not in st.session_state:
+        st.session_state.evidence_pool_v3 = []
+    if "evidence_ready_v3" not in st.session_state:
+        st.session_state.evidence_ready_v3 = False
+    if "gemini_policy_evidence" not in st.session_state:
+        st.session_state.gemini_policy_evidence = []
+    if "gemini_approval_fingerprint" not in st.session_state:
+        st.session_state.gemini_approval_fingerprint = None
 
     if "metadata_validation_completed" not in st.session_state:
         st.session_state.metadata_validation_completed = False
@@ -1037,6 +1071,9 @@ def main() -> None:
         ),
         evidence_sufficiency=st.session_state.evidence_sufficiency,
         retrieval_attempts=st.session_state.retrieval_attempts,
+        evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
+        evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
+        evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
@@ -1053,33 +1090,43 @@ def main() -> None:
         "Cari evidence kebijakan",
         type="secondary",
     ):
-        policy_queries = build_policy_queries(
-            metadata_validation=metadata_validation,
-            quality_findings=findings,
-        )
-        evidence_needs = build_evidence_needs(
-            metadata_validation,
-            findings,
-            st.session_state.contextual_validation,
-        )
-
         try:
             with st.spinner(
                 "Mencari evidence pada dokumen kebijakan..."
             ):
-                retrieval_result = retrieve_with_bounded_retry(
-                    initial_queries=policy_queries,
-                    evidence_needs=evidence_needs,
-                    retriever=retrieve_policy_chunks,
-                    top_k=3,
+                evidence_needs = plan_product_evidence_needs(
+                    selected_domain=analysis_context.selected_domain,
+                    metadata_validation=metadata_validation,
+                    findings=findings,
+                    contextual_validation=st.session_state.contextual_validation,
                 )
-                st.session_state.policy_evidence = retrieval_result["policy_evidence"]
-                st.session_state.evidence_sufficiency = retrieval_result["evidence_sufficiency"]
-                st.session_state.retrieval_attempts = retrieval_result["retrieval_attempts"]
+                aggregate = run_product_evidence_workflows(
+                    selected_domain=analysis_context.selected_domain,
+                    governance_context=analysis_context.governance_context,
+                    evidence_needs=evidence_needs,
+                )
+                st.session_state.evidence_workflow_results_v3 = [
+                    workflow.to_dict() for workflow in aggregate.workflows
+                ]
+                st.session_state.evidence_pool_v3 = [dict(item) for item in aggregate.evidence_pool]
+                st.session_state.evidence_ready_v3 = aggregate.evidence_ready
+                st.session_state.policy_evidence = evidence_pool_as_groups(aggregate.evidence_pool)
+                st.session_state.evidence_sufficiency = {
+                    "status": "sufficient" if aggregate.evidence_ready else "insufficient",
+                    "score": 100.0 if aggregate.evidence_ready else 0.0,
+                    "reasons": list(aggregate.blocking_reasons),
+                }
+                st.session_state.retrieval_attempts = [
+                    attempt.to_dict()
+                    for workflow in aggregate.workflows
+                    for attempt in workflow.attempts
+                ]
 
             st.session_state.gemini_analysis = {}
             st.session_state.evidence_review = {}
             st.session_state.report_payload = {}
+            st.session_state.gemini_policy_evidence = []
+            st.session_state.gemini_approval_fingerprint = None
             st.session_state.policy_evidence_retrieval_completed = True
             st.session_state.agent_audit = append_audit_event(
                 st.session_state.agent_audit,
@@ -1094,6 +1141,11 @@ def main() -> None:
             st.session_state.policy_evidence = []
             st.session_state.evidence_sufficiency = {}
             st.session_state.retrieval_attempts = []
+            st.session_state.evidence_workflow_results_v3 = []
+            st.session_state.evidence_pool_v3 = []
+            st.session_state.evidence_ready_v3 = False
+            st.session_state.gemini_policy_evidence = []
+            st.session_state.gemini_approval_fingerprint = None
             st.session_state.gemini_analysis = {}
             st.session_state.evidence_review = {}
             st.session_state.report_payload = {}
@@ -1134,11 +1186,18 @@ def main() -> None:
         ),
         evidence_sufficiency=st.session_state.evidence_sufficiency,
         retrieval_attempts=st.session_state.retrieval_attempts,
+        evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
+        evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
+        evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
     )
 
+    _show_v3_evidence_workflows(
+        st.session_state.evidence_workflow_results_v3,
+        st.session_state.evidence_ready_v3,
+    )
     _show_policy_evidence(
         policy_evidence
     )
@@ -1158,9 +1217,11 @@ def main() -> None:
     gemini_allowed = (
         agent_decision.current_stage is AgentStage.ANALYSIS_READY
         and agent_decision.next_action is AgentAction.RUN_GEMINI_ANALYSIS
+        and st.session_state.evidence_ready_v3
         and agent_state.evidence_count > 0
         and agent_state.evidence_sufficiency_evaluated
         and agent_state.evidence_sufficiency_status == "sufficient"
+        and not st.session_state.gemini_analysis
     )
 
     if not gemini_allowed:
@@ -1173,6 +1234,14 @@ def main() -> None:
         type="primary",
         disabled=not gemini_allowed,
     ):
+        gemini_evidence_pool = sanitize_policy_evidence_for_gemini(
+            st.session_state.evidence_pool_v3
+        )
+        gemini_policy_evidence = evidence_pool_as_groups(gemini_evidence_pool)
+        if not gemini_evidence_pool:
+            st.error("Tidak ada evidence eligible yang dapat dikirim ke Gemini.")
+            return
+        st.session_state.gemini_approval_fingerprint = current_fingerprint
         with st.spinner("Gemini sedang menganalisis hasil MetaGuard..."):
             execution = execute_decision(
                 agent_decision,
@@ -1183,7 +1252,8 @@ def main() -> None:
                     findings=findings,
                     metadata=metadata,
                     metadata_validation=metadata_validation,
-                    policy_evidence=policy_evidence,
+                    policy_evidence=gemini_policy_evidence,
+                    analysis_context=analysis_context.to_dict(),
                 ),
                 approved=True,
                 step=_next_agent_step(st.session_state.agent_audit),
@@ -1195,10 +1265,13 @@ def main() -> None:
             ]
         if execution.success:
             st.session_state.gemini_analysis = execution.output
+            st.session_state.gemini_policy_evidence = gemini_policy_evidence
             st.session_state.evidence_review = {}
             st.session_state.report_payload = {}
         else:
             st.session_state.gemini_analysis = {}
+            st.session_state.gemini_policy_evidence = []
+            st.session_state.gemini_approval_fingerprint = None
             st.session_state.evidence_review = {}
             st.session_state.report_payload = {}
             st.error(
@@ -1234,6 +1307,9 @@ def main() -> None:
             ),
             evidence_sufficiency=st.session_state.evidence_sufficiency,
             retrieval_attempts=st.session_state.retrieval_attempts,
+            evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
+            evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
+            evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
             gemini_analysis=gemini_analysis,
             evidence_review=evidence_review,
             report_payload=st.session_state.report_payload,
@@ -1243,7 +1319,7 @@ def main() -> None:
                 trace_decision,
                 trace_state,
                 AgentExecutionContext(
-                    policy_evidence=policy_evidence,
+                    policy_evidence=st.session_state.gemini_policy_evidence,
                     gemini_analysis=gemini_analysis,
                 ),
                 step=_next_agent_step(st.session_state.agent_audit),
@@ -1326,6 +1402,9 @@ def main() -> None:
         ),
         evidence_sufficiency=st.session_state.evidence_sufficiency,
         retrieval_attempts=st.session_state.retrieval_attempts,
+        evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
+        evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
+        evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
