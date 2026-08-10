@@ -164,6 +164,24 @@ def test_education_missing_concepts_are_explicit_skips() -> None:
     assert result.findings_count == 0
 
 
+def test_education_classroom_rule_resolves_jumlah_ruang_kelas_without_affecting_teacher_rule() -> None:
+    flagged = run_domain_rule_validation(
+        pd.DataFrame({"jumlah_siswa": [5], "jumlah_guru": [1], "jumlah_ruang_kelas": [0]}),
+        selected_domain="education",
+    )
+    findings = {item["check_id"] for item in _engine_findings(flagged)}
+    assert findings == {"student_count_without_classroom"}
+    classroom = next(item for item in flagged.rule_results if item.rule_id == "EDU-STUDENT-CLASSROOM-001")
+    assert classroom.state == RULE_STATE_EVALUATED
+    assert classroom.findings[0]["resolved_columns"][1]["source_column"] == "jumlah_ruang_kelas"
+
+    clear = run_domain_rule_validation(
+        pd.DataFrame({"jumlah_siswa": [5], "jumlah_guru": [1], "jumlah_ruang_kelas": [1]}),
+        selected_domain="education",
+    )
+    assert not _engine_findings(clear)
+
+
 @pytest.mark.parametrize("status", ["offline", "nonaktif", "tidak aktif"])
 def test_environment_sensor_measurement_rule_is_conservative_and_human_reviewed(status: str) -> None:
     dataframe = pd.DataFrame({"status_sensor": [status, "aktif"], "ph_air": [7.0, 6.5], "pm25": [None, 12]})
