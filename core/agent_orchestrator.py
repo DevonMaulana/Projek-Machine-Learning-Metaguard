@@ -82,6 +82,12 @@ def plan_next_action(state: AgentState) -> AgentDecision:
             "Retrieval selesai tetapi sufficiency evidence belum dievaluasi.",
         )
     if state.evidence_workflow_v3_completed:
+        if state.evidence_workflow_v3_state == "NOT_APPLICABLE":
+            return AgentDecision(
+                AgentStage.COMPLETE,
+                AgentAction.NONE,
+                "Tidak ada policy evidence yang applicable untuk konteks tata kelola ini; workflow deterministik telah selesai.",
+            )
         if not state.evidence_ready_v3:
             return AgentDecision(
                 AgentStage.EVIDENCE_REVIEW_REQUIRED,

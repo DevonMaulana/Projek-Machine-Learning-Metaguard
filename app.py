@@ -178,6 +178,21 @@ def _show_v3_evidence_workflows(workflows: list[dict[str, Any]], evidence_ready:
         )
 
 
+def _v3_agent_workflow_state(
+    workflows: list[dict[str, Any]],
+    evidence_ready: bool,
+) -> str | None:
+    """Expose only truthful aggregate v3 states to the existing agent state."""
+    if evidence_ready:
+        return "READY"
+    if workflows and all(
+        workflow.get("workflow_state") == "NOT_APPLICABLE"
+        for workflow in workflows
+    ):
+        return "NOT_APPLICABLE"
+    return None
+
+
 def _show_evidence_sufficiency(
     sufficiency: dict[str, Any],
     attempts: list[dict[str, Any]],
@@ -1083,7 +1098,10 @@ def main() -> None:
         retrieval_attempts=st.session_state.retrieval_attempts,
         evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
         evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
-        evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
+        evidence_workflow_v3_state=_v3_agent_workflow_state(
+            st.session_state.evidence_workflow_results_v3,
+            st.session_state.evidence_ready_v3,
+        ),
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
@@ -1198,7 +1216,10 @@ def main() -> None:
         retrieval_attempts=st.session_state.retrieval_attempts,
         evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
         evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
-        evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
+        evidence_workflow_v3_state=_v3_agent_workflow_state(
+            st.session_state.evidence_workflow_results_v3,
+            st.session_state.evidence_ready_v3,
+        ),
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
@@ -1323,7 +1344,10 @@ def main() -> None:
             retrieval_attempts=st.session_state.retrieval_attempts,
             evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
             evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
-            evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
+            evidence_workflow_v3_state=_v3_agent_workflow_state(
+                st.session_state.evidence_workflow_results_v3,
+                st.session_state.evidence_ready_v3,
+            ),
             gemini_analysis=gemini_analysis,
             evidence_review=evidence_review,
             report_payload=st.session_state.report_payload,
@@ -1428,7 +1452,10 @@ def main() -> None:
         retrieval_attempts=st.session_state.retrieval_attempts,
         evidence_workflow_v3_completed=bool(st.session_state.evidence_workflow_results_v3),
         evidence_ready_v3=bool(st.session_state.evidence_ready_v3),
-        evidence_workflow_v3_state=("READY" if st.session_state.evidence_ready_v3 else None),
+        evidence_workflow_v3_state=_v3_agent_workflow_state(
+            st.session_state.evidence_workflow_results_v3,
+            st.session_state.evidence_ready_v3,
+        ),
         gemini_analysis=st.session_state.gemini_analysis,
         evidence_review=st.session_state.evidence_review,
         report_payload=st.session_state.report_payload,
