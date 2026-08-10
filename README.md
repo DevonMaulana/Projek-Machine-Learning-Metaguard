@@ -1,252 +1,302 @@
 # MetaGuard
 
-MetaGuard v0.3 release candidate adalah *Domain-Aware Policy-Grounded Data
-Quality Review System* untuk validasi awal dataset OPD/pemerintah daerah.
+> **MetaGuard v0.3.5** — sistem *deterministic-first* untuk review kualitas data, konteks domain, dan evidence kebijakan lokal.
 
-MetaGuard memadukan validation deterministik, konteks domain dan tata kelola
-eksplisit, policy-grounded retrieval lokal, orchestrator berbatas, Gemini dengan
-persetujuan manusia, dan traceability deterministik. MetaGuard bukan chatbot umum atau pengambil
-keputusan otonom. Temuan teknis utama selalu berasal dari aturan deterministik;
-Gemini hanya menyusun interpretasi dan rekomendasi dari hasil serta evidence
-yang tersedia.
+## 1. Tentang MetaGuard
 
-## Tujuan
+MetaGuard membantu pengguna meninjau kualitas teknis dan kontekstual dataset CSV, menghubungkan hasil pemeriksaan dengan evidence kebijakan lokal yang relevan, lalu—bila seluruh guard terpenuhi—menyediakan interpretasi Gemini yang terbatas dan dapat ditelusuri.
 
-MetaGuard membantu pemeriksaan awal kualitas dataset, kelengkapan metadata,
-potensi inkonsistensi konteks, dan evidence kebijakan sebelum publikasi atau
-verifikasi lanjutan. MetaGuard bukan mesin penetapan kepatuhan hukum, bukan
-pengganti auditor, dan bukan platform produksi pemerintah.
+Fokus utama MetaGuard adalah auditabilitas: temuan teknis berasal dari pemeriksaan deterministik berbasis Pandas dan rule registry. RAG/Chroma menyediakan konteks evidence kebijakan, sedangkan Gemini hanya berperan untuk menginterpretasi, merangkum, dan memberi rekomendasi dari state deterministik serta evidence yang telah divalidasi.
 
-## Fitur utama
+MetaGuard **bukan** chatbot umum, sistem sertifikasi legal/compliance, pengambil keputusan otonom, sistem perbaikan CSV otomatis, maupun platform enterprise siap produksi. Project ini dikembangkan sebagai prototype/research-coursework untuk review awal kualitas data.
 
-- Ingestion satu CSV dengan deteksi/override encoding, delimiter, quote
-  character, dan penanganan baris malformed.
-- Diagnostics header asli/terurai, duplicate header, unnamed column, warning
-  parsing, dan scope analisis.
-- Mode `exact`, `chunked`, dan `sampled` dengan reservoir sampling
-  deterministik.
-- Profil dataset, quality checks deterministik, dan quality score proporsional.
-- Validasi kelengkapan metadata serta contextual validation.
-- Profil domain eksplisit: `generic`, `healthcare`, `education`,
-  `environment`, dan `other`; governance context: `government_public` atau
-  `generic_non_government`.
-- Rule healthcare, serta pilot heuristic konservatif untuk education dan
-  environment; domain tidak diinfer otomatis dari kolom CSV.
-- Registry konsep/rule/policy, corpus kebijakan v3 enam dokumen terverifikasi,
-  routing deterministik, metadata-filtered retrieval, evidence sufficiency dan
-  alignment, serta bounded retry maksimal dua attempt per evidence need.
-- Controlled agentic orchestration dengan tool allowlist dan audit ringan.
-- Analisis Gemini terstruktur setelah persetujuan manusia eksplisit.
-- Evidence traceability deterministik dan laporan JSON.
+## 2. Fitur Utama
 
-Tidak tersedia autentikasi, database pengguna/riwayat, deployment, web search,
-koreksi CSV otomatis, atau pemrosesan *true out-of-core*.
+- Ingestion CSV dengan konfigurasi parsing, diagnostics, serta mode analisis `exact`, `chunked`, dan `sampled`.
+- Profiling dataset, pemeriksaan kualitas deterministik, dan quality score.
+- Validasi metadata dan pemeriksaan kontekstual generik.
+- Pilihan domain dan governance context yang eksplisit; tidak ada deteksi domain otomatis oleh LLM.
+- Semantic Concept Registry untuk resolusi nama kolom melalui alias exact-normalized.
+- Domain Rule Registry dengan provenance, resolved columns, dan kebutuhan human review.
+- Policy Registry, corpus kebijakan lokal v3, Chroma metadata-filtered retrieval, serta manifest/fingerprint corpus.
+- Routing evidence deterministik, assessment sufficiency/alignment, dan retry retrieval yang dibatasi maksimal dua attempt per evidence need.
+- Orchestrator berbasis state dan allowlist action, bukan autonomous agent loop.
+- Gemini opsional setelah evidence siap dan approval manusia eksplisit.
+- Validasi citation deterministik dan laporan JSON schema `1.1` dengan metadata/provenance v3.
 
-## Arsitektur
+## 3. Domain dan Governance Context
+
+Domain dipilih pengguna secara eksplisit dan disimpan sebagai `DomainId` yang stabil:
+
+| Domain ID | Fungsi |
+| --- | --- |
+| `generic` | Pemeriksaan generik tanpa rule pack sektoral. |
+| `healthcare` | Mengaktifkan `healthcare_core`. |
+| `education` | Mengaktifkan `education_core`. |
+| `environment` | Mengaktifkan `environment_core`. |
+| `other` | Pemeriksaan generik untuk konteks di luar profil yang tersedia. |
+
+Governance context independen dari domain:
+
+| Governance context | Arti operasional |
+| --- | --- |
+| `government_public` | Evidence kebijakan pemerintah yang eligible dapat dirutekan sesuai evidence need. |
+| `generic_non_government` | Kebijakan pemerintah tidak dirutekan otomatis. |
+
+Domain tidak diinfer dari nama kolom, dan governance context tidak diinfer dari domain. Untuk `generic` atau `other`, rule sektoral tidak berjalan. Untuk `generic_non_government`, seluruh evidence need pemerintah dapat berstatus `NOT_APPLICABLE`; ini bukan kegagalan retrieval dan workflow deterministik dapat selesai tanpa approval atau Gemini.
+
+## 4. Arsitektur Sistem
 
 ```mermaid
 flowchart TD
-    A[CSV Upload] --> B[Robust CSV Ingestion]
-    B --> C[Data Profiling]
-    C --> D[Deterministic Quality Checks]
-    D --> E[Quality Scoring]
-    E --> F[Metadata Validation]
-    F --> G[Context-Aware Validation]
-    G --> H[Agentic Orchestrator]
-    H --> I[Policy Evidence Retrieval / RAG]
-    I --> J[Evidence Sufficiency Evaluation]
-    J --> K{Evidence sufficient?}
-    K -->|Ya| L[Human Approval]
-    K -->|Belum, attempt < 2| M[Deterministic Query Refinement]
-    M --> I
-    K -->|Belum, retry habis| N[Human Review Required]
-    L --> O[Gemini Structured Analysis]
-    O --> P[Deterministic Traceability Review]
-    P --> Q[JSON Report]
+    A[CSV] --> B[Ingestion dan profiling]
+    B --> C[Generic deterministic quality checks]
+    C --> D[Metadata validation]
+    D --> E[Domain dan governance context eksplisit]
+    E --> F[Concept resolution]
+    F --> G[Generic contextual dan domain rule execution]
+    G --> H[Evidence planning dan policy routing]
+    H --> I[Chroma v3 metadata-filtered retrieval]
+    I --> J[Evidence sufficiency dan alignment]
+    J --> K[Bounded retry maksimal dua attempt]
+    K --> L{Evidence state}
+    L -->|READY + approval eksplisit| M[Gemini opsional]
+    M --> N[Traceability review]
+    L -->|NOT_APPLICABLE| O[Deterministic report]
+    L -->|Belum ready| P[Evidence review atau bounded retry]
+    P --> L
+    N --> O
 ```
 
-`MAX_RETRIEVAL_ATTEMPTS` adalah `2`: retrieval awal dan paling banyak satu
-retry dengan refinement deterministik. Tidak ada loop tanpa batas atau Gemini
-query rewriting.
+Analysis context memiliki fingerprint SHA-256 deterministik dari domain, governance context, serta fingerprint concept/rule/policy registry. Dataset fingerprint dan analysis-context fingerprint dipakai untuk mencegah state downstream yang sudah stale, termasuk evidence, approval, Gemini result, traceability, dan report.
 
-## Prinsip desain
+## 5. Deterministic-First Design
 
-1. **Deterministic-first** — finding teknis dibuat oleh rule lokal berbasis
-   Pandas, bukan LLM.
-2. **Policy-grounded** — RAG menyediakan evidence kebijakan, bukan keputusan
-   kepatuhan.
-3. **Bounded agentic workflow** — satu orchestrator memilih action dari state
-   kecil yang terkontrol.
-4. **Human-in-the-loop** — Gemini membutuhkan approval eksplisit pengguna.
-5. **Auditable dan traceable** — keputusan agent dicatat ringkas dan citation
-   Gemini dibandingkan terhadap evidence retrieval.
-6. **No automatic legal conclusion** — seluruh hasil tetap memerlukan review
-   manusia serta sumber data resmi.
+Prinsip desain MetaGuard adalah sebagai berikut.
 
-## Workflow agentic
+1. **Temuan teknis authoritative.** Quality checker, metadata validator, contextual validation, dan domain rule engine menghasilkan finding deterministik.
+2. **LLM bukan sumber finding.** Gemini tidak boleh membuat finding teknis baru, mengubah severity/count/percentage deterministik, atau memperkuat wording yang masih bersifat ketidakpastian.
+3. **Evidence bukan bukti kepatuhan.** Policy evidence adalah konteks pendukung; evidence readiness dan sufficiency merupakan heuristic MetaGuard, bukan kesimpulan hukum.
+4. **Provenance eksplisit.** Rule memiliki provenance seperti `DETERMINISTIC_INVARIANT` atau `HEURISTIC`; provenance tidak berubah hanya karena ada policy chunk yang berhasil diambil.
+5. **Human review tetap diperlukan.** Finding heuristic, policy interpretation, dan hasil Gemini tidak menggantikan penilaian manusia.
 
-Planner deterministik menggunakan stage:
+Pemisahan ini membuat setiap hasil review memiliki jalur provenance yang sesuai. Finding deterministik dapat ditelusuri ke checker/rule, konsep, dan kolom sumber, sedangkan interpretasi Gemini dapat ditelusuri ke evidence dan citation yang diberikan kepadanya.
 
-`INGESTION_REQUIRED` → `QUALITY_REQUIRED` → `METADATA_REQUIRED` →
-`CONTEXTUAL_VALIDATION_REQUIRED` → `EVIDENCE_REQUIRED` →
-`EVIDENCE_REVIEW_REQUIRED` → `ANALYSIS_READY` →
-`TRACEABILITY_REQUIRED` → `REPORT_REQUIRED` → `COMPLETE`.
+## 6. Generic Quality Checks
 
-Stage `ERROR` menangani kegagalan prasyarat/tool. Hasil kosong tidak disamakan
-dengan proses yang belum berjalan: zero findings dapat berarti quality check
-selesai, sedangkan zero evidence dapat berarti retrieval selesai tetapi tidak
-menemukan evidence.
+`core/quality_checker.py` menyediakan pemeriksaan deterministik berikut:
 
-Action agent berasal dari allowlist internal untuk quality pipeline, metadata,
-contextual validation, retrieval/evaluasi/retry evidence, Gemini, traceability,
-dan report. Tidak ada `eval`, `exec`, shell command, atau Python arbitrer dari
-input pengguna.
+- missing values;
+- whitespace dan empty strings pada kolom teks;
+- variasi kategori yang tinggi;
+- duplicate identifier;
+- invalid date dan inconsistent date format pada kolom yang terdeteksi sebagai tanggal;
+- negative numeric (dengan pengecualian nama koordinat yang dikenal);
+- percentage di luar rentang 0–100;
+- numeric outlier berbasis IQR;
+- constant column dan empty column;
+- duplicate rows dan duplicate column names.
 
-## Evidence sufficiency dan retrieval retry
+Quality score dihitung terpisah dari finding. Nilai outlier, tanggal, duplicate identifier, dan temuan statistik lain adalah sinyal verifikasi; temuan tersebut tidak otomatis menyatakan data salah atau tidak patuh.
 
-Evidence sufficiency adalah **heuristic kecukupan evidence retrieval
-MetaGuard**, bukan legal sufficiency, compliance score, jaminan relevansi
-semantik, atau correctness score. Komponen skornya adalah coverage evidence
-need, jumlah evidence unik, source diversity, dan pengabaian duplikat.
+## 7. Domain Rule Packs
 
-Heuristik internal saat ini: `SUFFICIENT_THRESHOLD=85`,
-`PARTIAL_THRESHOLD=40`, dan minimum dua evidence unik untuk `sufficient`.
-Evidence retry bersifat kumulatif dan dideduplikasi konservatif berdasarkan
-`chunk_id`, atau source/page/text bila `chunk_id` tidak ada. Jika coverage tidak
-dapat diperbaiki secara deterministik atau retry habis, Gemini diblokir dan
-human review diperlukan.
+Rule berikut berasal dari `data/rule_registry.json`. Semua rule bekerja melalui `concept_id` dan actual resolved source columns, bukan melalui satu nama kolom CSV yang di-hard-code.
 
-## Contextual validation
+| Domain / pack | Rule ID | Tujuan ringkas | Provenance | Human review |
+| --- | --- | --- | --- | --- |
+| Healthcare / `healthcare_core` | `HEALTH-BED-CAPACITY-001` | Tempat tidur terisi tidak melebihi kapasitas rawat inap. | `DETERMINISTIC_INVARIANT` | Ya |
+| Healthcare / `healthcare_core` | `HEALTH-INTERNET-BANDWIDTH-001` | Status tanpa internet dengan bandwidth positif berpotensi tidak konsisten. | `HEURISTIC` | Ya |
+| Education / `education_core` | `EDU-STUDENT-TEACHER-001` | Siswa positif dengan guru nol berpotensi tidak konsisten. | `HEURISTIC` | Ya |
+| Education / `education_core` | `EDU-STUDENT-CLASSROOM-001` | Siswa positif dengan kelas nol berpotensi tidak konsisten. | `HEURISTIC` | Ya |
+| Environment / `environment_core` | `ENV-SENSOR-MEASUREMENT-001` | Sensor offline/nonaktif dengan pengukuran numerik pada baris sama berpotensi tidak konsisten. | `HEURISTIC` | Ya |
 
-Contextual validation adalah pemeriksaan pendahuluan deterministik yang dapat
-memerlukan review domain/manusia:
+Education dan environment adalah pilot rule pack konservatif. Rule heuristic bukan standar regulasi, bukan threshold legal, dan tidak memiliki `policy_requirement`. Missing atau ambiguous concept menghasilkan state skip yang eksplisit, bukan keberhasilan palsu.
 
-- konsistensi tahun `data_period` metadata dengan kolom tanggal;
-- cakupan wilayah pada level administratif yang kompatibel;
-- `tempat_tidur_terisi <= kapasitas_rawat_inap` untuk profile `healthcare`;
-- status internet eksplisit tanpa koneksi versus `bandwidth_mbps > 0`.
+## 8. Policy Evidence dan RAG
 
-Tidak ada fuzzy geographic matching, external geocoder, atau basis data wilayah
-eksternal. Kolom kode wilayah tidak dianggap nama wilayah tanpa mapping
-eksplisit. `kecamatan` tidak dinilai mismatch terhadap metadata `kabupaten`
-tanpa mapping hierarki eksplisit.
+Policy registry adalah sumber kebenaran corpus. Corpus v3 disimpan terpisah dalam collection Chroma `metaguard_policies_v3`, menggunakan embedding lokal `sentence-transformers/all-MiniLM-L6-v2`, chunk ID deterministik, metadata scalar yang kompatibel dengan Chroma, manifest persisted, dan fingerprint corpus.
 
-Koordinat negatif valid tidak dilaporkan sebagai `negative_numeric` bila nama
-kolom, setelah normalisasi exact, adalah `latitude`, `longitude`, `lat`, `lon`,
-atau `lng`. Belum ada generalized coordinate-range validation.
+Corpus v3 baseline memuat enam dokumen kebijakan yang telah diverifikasi untuk corpus lokal proyek:
 
-## Analysis modes
+- `GOV-SDI-PERPRES-39-2019`;
+- `BPS-STANDARD-DATA-4-2020`;
+- `BPS-METADATA-5-2020`;
+- `HEALTH-SATU-DATA-18-2022`;
+- `EDU-SATU-DATA-31-2022`;
+- `ENV-SATU-DATA-25-2021`.
 
-| Mode | Scope efektif | Strategi memori | Catatan |
-| --- | --- | --- | --- |
-| `exact` | `full` | `single_dataframe` | Seluruh file dimuat sekali. |
-| `chunked` | `full` | `combined_dataframe` | Dibaca bertahap lalu tetap digabung ke memori untuk pemeriksaan global; bukan *true out-of-core*. |
-| `sampled`, sample < total | `sampled` | `reservoir_sample` | Reservoir sampling deterministik; finding hanya berlaku pada sampel. |
-| `sampled`, sample >= total | `full` | `reservoir_sample` | Seluruh baris dianalisis; `sampling_applied=false`. |
+Evidence need yang tervalidasi adalah:
 
-Default `CsvReadConfig`: `chunk_size=50000`, `sample_size=10000`, dan
-`sample_seed=42`. Finding sampled tidak diekstrapolasi menjadi estimasi populasi.
+- `metadata_governance`;
+- `data_quality`;
+- `accountability`;
+- `domain_semantic_support`;
+- `technical_standard_support`.
 
-## Scoring
+Router hanya menerima context/domain/evidence need yang tervalidasi dan menghasilkan policy pack, policy ID, serta metadata filter yang aman. Ia tidak menerima raw Chroma filter, tidak melakukan query rewriting oleh LLM, dan tidak memakai fallback lintas-domain.
 
-Skor dimulai dari 100. Penalti tiap finding adalah:
+### Applicability dan retrieval state
+
+| State | Makna |
+| --- | --- |
+| `APPLICABLE` | Ada policy eligible yang dapat dirutekan untuk context dan evidence need. |
+| `NOT_APPLICABLE` | Evidence kebijakan tidak tepat diterapkan untuk context tersebut; bukan retrieval failure. |
+| `NO_ELIGIBLE_POLICY` | Context/need valid, tetapi registry tidak menyediakan policy eligible. |
+| `SUCCESS` | Retrieval v3 mengembalikan evidence eligible. |
+| `EMPTY` | Retrieval applicable, tetapi tidak menghasilkan chunk. |
+| `CORPUS_STALE` | Manifest/collection/corpus tidak current dan memerlukan rebuild eksplisit. |
+
+Sufficiency menilai coverage, evidence unik, dan source diversity secara deterministik. Alignment policy pack dan domain dinilai terpisah. Evidence duplikat tidak meningkatkan score. Bila applicable evidence belum siap, retry deterministik dapat dilakukan paling banyak satu kali setelah retrieval pertama; tidak ada retry tanpa batas.
+
+## 9. Agentic Review Workflow
+
+Orchestrator MetaGuard memakai stage dan action yang dibatasi secara statis, bukan agent yang bebas memanggil tool arbitrary.
 
 ```text
-penalty = severity_weight × (0.15 + 0.85 × sqrt(clamp(percentage, 0, 100) / 100))
+INGESTION_REQUIRED
+QUALITY_REQUIRED
+METADATA_REQUIRED
+CONTEXTUAL_VALIDATION_REQUIRED
+EVIDENCE_REQUIRED
+EVIDENCE_REVIEW_REQUIRED
+ANALYSIS_READY
+TRACEABILITY_REQUIRED
+REPORT_REQUIRED
+COMPLETE
+ERROR
 ```
 
-Bobot: `high=12`, `medium=6`, `low=2`, `info=0`; total penalti dibatasi 100.
-Grade: `Sangat Baik` (≥90), `Baik` (≥75), `Perlu Perbaikan` (≥60), dan
-`Bermasalah` (<60).
+Contoh action yang diizinkan mencakup quality pipeline, metadata validation, contextual validation, retrieval/evaluasi/retry evidence, Gemini analysis, traceability review, dan build report. Stage `COMPLETE` untuk seluruh evidence need `NOT_APPLICABLE` berarti workflow deterministik sudah selesai; status tersebut tidak menyatakan dataset valid atau compliant.
 
-## Policy documents
+## 10. Gemini Integration
 
-Knowledge base lokal mencakup:
+Gemini bersifat opsional dan hanya dapat dieksekusi bila seluruh kondisi berikut terpenuhi:
 
-- `data/policies/PeraturanBPSNo5-Tahun2020-Metadata.pdf`
-- `data/policies/PerpresNo39-Tahun2019-SatuData.pdf`
+1. evidence workflow v3 ready untuk review;
+2. ada policy evidence eligible yang disanitasi dan dibatasi;
+3. pengguna memberikan approval eksplisit; dan
+4. analysis state/fingerprint belum berubah.
 
-Dokumen `.txt` dan `.pdf` di `data/policies/` dapat di-ingest tanpa OCR.
-Bangun ulang Chroma vector store lokal dengan:
+Satu analysis state yang tidak berubah dibatasi maksimal satu panggilan Gemini. Gemini menerima deterministic findings, metadata/context yang relevan, contextual/domain execution state, dan policy evidence bounded. Sanitizer membatasi evidence Gemini ke maksimal lima item dan string evidence ke 300 karakter tanpa menghapus identity `chunk_id`, `source`, atau `page`.
 
-```powershell
-python -m rag.ingest
-```
+Gemini tidak boleh menghasilkan verdict legal/compliance, memanggil retrieval, memperbaiki CSV, membuat rule baru, atau menciptakan finding teknis authoritative.
 
-Vector store berada pada `vector_db/`, collection `metaguard_policies`, dan
-embedding model `sentence-transformers/all-MiniLM-L6-v2`. Dokumen tersebut
-tidak menjadikan MetaGuard penetap legal compliance.
+## 11. Traceability
 
-## Instalasi
+Setiap citation Gemini diperiksa secara deterministik terhadap evidence yang benar-benar diberikan ke Gemini. Identity evidence memuat setidaknya:
+
+- `chunk_id`;
+- `source`;
+- `page`;
+- `policy_id`;
+- `policy_pack`;
+- `domain_id`; dan
+- `document_type`.
+
+Citation dengan `chunk_id` yang tidak supplied atau tidak eligible dinilai invalid, meskipun source/page tampak serupa. Summary traceability menyimpan jumlah citation total, valid, invalid, dan persentase traceability.
+
+Traceability membuktikan hubungan citation ke evidence yang tersedia; ia **tidak** menjamin interpretasi Gemini benar secara faktual, legal, atau kontekstual.
+
+## 12. Laporan JSON
+
+`core/report_builder.py` menghasilkan report dengan `schema_version` `1.1`. Report tetap dapat dibangun tanpa Gemini dan secara additive memuat `v3_metadata`, termasuk:
+
+- analysis context dan registry fingerprints;
+- domain rule execution serta rule provenance;
+- policy evidence bounded yang eligible;
+- summary per evidence need, sufficiency, dan alignment;
+- evidence readiness, human approval, Gemini execution, dan traceability;
+- limitations resmi MetaGuard.
+
+Finding deterministik tidak ditulis ulang oleh Gemini. Report tidak menyertakan PDF mentah, embedding vector, API key, raw session state, atau DataFrame penuh.
+
+## 13. Instalasi
+
+Contoh berikut untuk Windows PowerShell.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-```
-
-## Environment
-
-Salin `.env.example` menjadi `.env`, lalu isi `GEMINI_API_KEY` bila akan
-menjalankan Gemini. Contoh environment juga memuat `GEMINI_MODEL`,
-`LLM_PROVIDER`, `EMBEDDING_MODEL`, dan `VECTOR_DB_PATH`. Jangan commit `.env`
-atau key nyata.
-
-```powershell
 Copy-Item .env.example .env
 ```
 
-## Menjalankan aplikasi dan test
+`.env.example` menyediakan konfigurasi lokal. Isi `GEMINI_API_KEY` bila ingin memakai Gemini; `GEMINI_MODEL` juga wajib tersedia saat Gemini dieksekusi. Jangan commit file `.env` atau API key nyata.
+
+Project menggunakan dependency utama: Streamlit, Pandas, Chroma, Sentence Transformers, pypdf, Google Gen AI, dan pytest. Chroma dipertahankan kompatibel dengan baseline local `0.6.3`.
+
+## 14. Menjalankan Aplikasi
+
+Jalankan dari root repository:
 
 ```powershell
-python -m streamlit run app.py
-python -m pytest -q
-python -m compileall app.py core llm rag tests
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-## Struktur repository
+Streamlit akan menampilkan URL lokal di terminal (umumnya `http://localhost:8501`). Pilih domain serta konteks tata kelola sebelum menjalankan alur analisis.
+
+## 15. Menjalankan Test
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall app.py core llm rag tests scripts
+```
+
+Baseline release v0.3.5: **364 passed** dengan **137 warning**. Warning yang diketahui berasal dari deprecation/compatibility Pydantic yang dipancarkan dependency Chroma pada test contract/ingestion/retrieval; warning tersebut bukan kegagalan test aplikasi.
+
+## 16. Struktur Repository
 
 ```text
-app.py                 # UI Streamlit dan orkestrasi ringan
-core/                  # ingestion, validation, scoring, agent, report
-rag/                   # loader, chunking, Chroma store, retrieval, ingest
-llm/                   # client Gemini terstruktur
-data/policies/         # dokumen kebijakan lokal
-tests/                 # unit, integration, acceptance, dan AppTest
-docs/                  # testing, arsitektur, dan release preparation
+.
+├── app.py                 # UI Streamlit dan integrasi workflow terkontrol
+├── core/                  # ingestion, validation, registries, agent, evidence, report
+├── rag/                   # PDF loading, chunking, corpus v3, Chroma retrieval
+├── llm/                   # client dan schema Gemini terstruktur
+├── data/                  # concept, rule, policy registry dan PDF kebijakan lokal
+├── scripts/               # utilitas eksplisit, termasuk build corpus v3
+├── tests/                 # unit, contract, integration, acceptance, dan Streamlit tests
+├── docs/                  # dokumentasi arsitektur, testing, dan release
+├── requirements.txt
+├── .env.example
+└── README.md
 ```
 
-## Output
+Artifact runtime seperti `vector_db/`, cache, `.env`, dan `__pycache__` diabaikan oleh Git. Corpus v3 tidak dibangun otomatis pada import atau rerun aplikasi; rebuild adalah tindakan maintenance eksplisit melalui `scripts/build_policy_corpus_v3.py`.
 
-Laporan JSON `schema_version` `1.1` memuat source, profile, quality summary,
-findings, score, metadata dan validasinya, contextual validation, policy
-evidence, evidence sufficiency, retrieval attempts, Gemini analysis, evidence
-review, ingestion diagnostics, serta `v3_metadata` untuk analysis context,
-provenance rule, evidence-need state, approval, Gemini, traceability, dan
-limitations. Field v0.2 tetap tersedia secara backward-compatible.
+## 17. Manual Acceptance / Validation Matrix
 
-## Limitations
+Manual acceptance workflow utama pada baseline v0.3.5:
 
-- Research/coursework prototype, bukan production-ready system.
-- Rule education dan environment adalah pilot `HEURISTIC` yang membutuhkan
-  human review; absence of finding bukan kesimpulan domain valid.
-- Evidence sufficiency adalah heuristic retrieval, bukan legal/compliance score.
-- Policy evidence memberi konteks pendukung dari corpus terdaftar/current dan
-  terverifikasi; readiness evidence bukan kepatuhan atau validitas hukum.
-- Gemini opsional, hanya setelah readiness evidence dan approval eksplisit,
-  maksimal satu call untuk analysis state yang tidak berubah; temuan
-  deterministik tetap authoritative. Tidak ada AI-generated repair atau rule.
-- Chroma distance belum dipakai untuk sufficiency.
-- Contextual rules terbatas; geographic matching sengaja konservatif.
-- Parser tanggal quality checker menerima format terbatas.
-- Finding sampled bersifat sample-specific; chunked memakai `combined_dataframe`.
-- Gemini memerlukan API key dan network; retrieval bergantung pada knowledge
-  base lokal yang sudah di-ingest.
-- Human review tetap diperlukan untuk data, konteks domain, evidence, dan
-  interpretasi kebijakan.
+| Skenario | Status | Cakupan utama |
+| --- | --- | --- |
+| Healthcare + Government/Public | PASS | `healthcare_core`, evidence healthcare, approval/traceability. |
+| Education + Government/Public | PASS | `education_core` pilot heuristic dan isolasi domain. |
+| Environment + Government/Public | PASS | `environment_core` pilot heuristic dan isolasi domain. |
+| Generic + Government/Public | PASS | pemeriksaan generik serta evidence governance yang eligible. |
+| Generic + Non-Government | PASS | seluruh evidence pemerintah `NOT_APPLICABLE`, tanpa policy retrieval yang applicable dan tanpa Gemini. |
 
-## Originalitas
+Matrix ini adalah acceptance teknis/manual terhadap alur prototype; bukan sertifikasi formal, qualification produksi, atau pengujian kepatuhan hukum.
 
-MetaGuard adalah implementasi original. DesignGuard dan Agentic-DesignGuard
-hanya menjadi referensi konseptual, bukan sumber code, prompt, struktur folder,
-UI, atau format laporan MetaGuard.
+## 18. Known Limitations
+
+- MetaGuard adalah prototype/research-coursework, bukan platform production-ready.
+- Duplicate identifier checker memakai heuristic nama kolom. Entity/reference identifier pada data relasional atau time-series—misalnya `id_sensor` yang berulang untuk banyak pengukuran—dapat valid tetapi masih berpotensi ditandai sebagai duplicate identifier. Penyempurnaan jangka panjang memerlukan pembedaan semantik record key dan entity reference secara eksplisit.
+- Numeric outlier berbasis IQR adalah sinyal statistik untuk verifikasi, bukan bukti nilai otomatis invalid.
+- Rule domain `HEURISTIC` memerlukan human review. Tidak adanya finding tidak membuktikan domain valid.
+- Corpus baseline terbatas pada enam policy yang terdaftar dan telah diverifikasi dalam corpus lokal proyek; tidak ada discovery kebijakan web otomatis saat runtime.
+- Evidence sufficiency/alignment adalah heuristic MetaGuard, bukan legal sufficiency, jaminan relevansi penuh, atau compliance score.
+- Contextual validation dan parsing tanggal sengaja konservatif dan cakupannya terbatas.
+- Mode `chunked` masih menggabungkan data untuk pemeriksaan global; ini bukan pemrosesan true out-of-core. Finding pada mode `sampled` hanya berlaku untuk sampel.
+- Gemini membutuhkan API key dan jaringan, tetapi tidak wajib untuk membangun report deterministik.
+- MetaGuard tidak melakukan automatic CSV repair.
+
+## 19. Release Status
+
+Current final technical baseline: **v0.3.5**.
+
+Perkembangan singkat: v0.1 membangun prototype awal, v0.2 memperkenalkan controlled agentic workflow, v0.3 menambahkan arsitektur domain-aware dan policy-grounded, sedangkan v0.3.5 memfinalkan semantics terminal untuk evidence yang seluruhnya `NOT_APPLICABLE`.
+
+## 20. Disclaimer
+
+MetaGuard adalah alat bantu review kualitas data. Semua hasil memerlukan penilaian manusia. Policy evidence bukan sertifikasi kepatuhan, dan Gemini bukan pengambil keputusan final.
