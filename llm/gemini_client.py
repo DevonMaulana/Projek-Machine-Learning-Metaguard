@@ -48,6 +48,7 @@ def _build_analysis_payload(
     policy_evidence: list[dict[str, Any]],
     ingestion: dict[str, Any] | None = None,
     analysis_context: dict[str, Any] | None = None,
+    contextual_validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a compact JSON-safe payload for Gemini."""
     return {
@@ -74,6 +75,7 @@ def _build_analysis_payload(
             "warnings": (ingestion or {}).get("warnings", []),
         },
         "analysis_context": analysis_context or {},
+        "contextual_validation": contextual_validation or {},
     }
 
 
@@ -85,6 +87,7 @@ def analyze_with_gemini(
     policy_evidence: list[dict[str, Any]],
     ingestion: dict[str, Any] | None = None,
     analysis_context: dict[str, Any] | None = None,
+    contextual_validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Analyze MetaGuard results using one Gemini API call.
@@ -115,6 +118,7 @@ def analyze_with_gemini(
         policy_evidence=policy_evidence,
         ingestion=ingestion,
         analysis_context=analysis_context,
+        contextual_validation=contextual_validation,
     )
 
     sampling_instruction = ""
@@ -155,6 +159,12 @@ Tugas:
 14. Temuan deterministik pada payload bersifat authoritative. Evidence hanya
     konteks kebijakan pendukung; kecukupan evidence bukan bukti kepatuhan.
 15. Cite hanya chunk_id, source, dan page yang tersedia pada policy_evidence.
+16. Contextual validation dan domain_rule_execution adalah authoritative. Jangan
+    menyatakan rule pack tidak aktif bila active_rule_packs payload menunjukkannya aktif.
+17. Jangan menyatakan evidence domain tidak tersedia bila policy_evidence memuat
+    domain_id yang sama dengan selected_domain. Pertahankan wording uncertainty
+    dari finding (misalnya potential inconsistency, format tidak dikenali, atau
+    identifier dipakai lebih dari satu baris); jangan mengubahnya menjadi kepastian.
 """ + sampling_instruction
 
     client = genai.Client(api_key=api_key)
