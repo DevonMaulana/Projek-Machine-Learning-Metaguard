@@ -1247,7 +1247,8 @@ def main() -> None:
         disabled=not gemini_allowed,
     ):
         gemini_evidence_pool = sanitize_policy_evidence_for_gemini(
-            st.session_state.evidence_pool_v3
+            st.session_state.evidence_pool_v3,
+            selected_domain=analysis_context.selected_domain.value,
         )
         gemini_policy_evidence = evidence_pool_as_groups(gemini_evidence_pool)
         if not gemini_evidence_pool:
@@ -1266,6 +1267,7 @@ def main() -> None:
                     metadata_validation=metadata_validation,
                     policy_evidence=gemini_policy_evidence,
                     analysis_context=analysis_context.to_dict(),
+                    contextual_validation=st.session_state.contextual_validation,
                 ),
                 approved=True,
                 step=_next_agent_step(st.session_state.agent_audit),

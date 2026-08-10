@@ -43,17 +43,27 @@ def sanitize_evidence(evidence: Iterable[Any]) -> list[Any]:
 
 def sanitize_policy_evidence_for_gemini(
     policy_evidence: Iterable[dict[str, Any]],
+    *,
+    selected_domain: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Bound Gemini-facing evidence while preserving citation identity metadata."""
+    """Bound evidence while retaining one matching sector chunk when available."""
+    candidates = [item for item in policy_evidence if isinstance(item, dict)]
+    selected: list[dict[str, Any]] = []
+    if selected_domain and selected_domain not in {"generic", "other"}:
+        selected.extend(item for item in candidates if item.get("domain_id") == selected_domain)
+    selected.extend(candidates)
     bounded: list[dict[str, Any]] = []
-    for item in policy_evidence:
-        if not isinstance(item, dict) or len(bounded) >= MAX_EVIDENCE_ITEMS:
+    seen: set[str] = set()
+    for item in selected:
+        chunk_id = str(item.get("chunk_id", "")).strip()
+        if not chunk_id or chunk_id in seen or len(bounded) >= MAX_EVIDENCE_ITEMS:
             continue
+        seen.add(chunk_id)
         text = _json_safe_value(item.get("text", ""))
         if isinstance(text, str) and len(text) > MAX_EVIDENCE_STRING_LENGTH:
             text = text[:MAX_EVIDENCE_STRING_LENGTH] + TRUNCATION_MARKER
         clean = {
-            "chunk_id": str(item.get("chunk_id", "")).strip(),
+            "chunk_id": chunk_id,
             "source": str(item.get("source", "")).strip(),
             "page": _json_safe_value(item.get("page")),
             "text": text,

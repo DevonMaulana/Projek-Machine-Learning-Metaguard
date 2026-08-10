@@ -135,6 +135,7 @@ def _run_gemini_analysis(context: AgentExecutionContext) -> dict[str, Any]:
         policy_evidence=context.policy_evidence,
         ingestion=context.ingestion,
         analysis_context=context.analysis_context,
+        contextual_validation=context.contextual_validation,
     )
 
 
