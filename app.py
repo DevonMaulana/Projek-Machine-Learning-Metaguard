@@ -37,6 +37,7 @@ from core.product_evidence_v3 import (
     run_product_evidence_workflows,
 )
 from core.metadata_validator import validate_metadata
+from core.evidence_summary import build_evidence_summary
 from core.quality_checker import run_quality_checks
 from core.report_builder import build_report
 from core.scoring import calculate_score
@@ -166,6 +167,12 @@ def _show_v3_evidence_workflows(workflows: list[dict[str, Any]], evidence_ready:
         assessment = workflow.get("final_assessment", {})
         st.caption(
             f"{request.get('evidence_need', '')}: {workflow.get('workflow_state', '')} "
+            f"| attempts {workflow.get('attempt_count', 0)} "
+            f"| score {assessment.get('sufficiency', {}).get('score', '-')}"
+        )
+        continue
+        st.caption(
+            f"{request.get('evidence_need', '')}: {workflow.get('workflow_state', '')} "
             f"Â· attempts {workflow.get('attempt_count', 0)} "
             f"Â· score {assessment.get('sufficiency', {}).get('score', '-')}"
         )
@@ -174,22 +181,25 @@ def _show_v3_evidence_workflows(workflows: list[dict[str, Any]], evidence_ready:
 def _show_evidence_sufficiency(
     sufficiency: dict[str, Any],
     attempts: list[dict[str, Any]],
+    workflows_v3: list[dict[str, Any]],
+    evidence_pool_v3: list[dict[str, Any]],
 ) -> None:
     """Render deterministic retrieval sufficiency without vector details."""
     st.subheader("Evidence Sufficiency")
     if not sufficiency:
         st.info("Sufficiency evidence akan dievaluasi setelah retrieval kebijakan dijalankan.")
         return
+    summary = build_evidence_summary(legacy_sufficiency=sufficiency, legacy_attempts=attempts, workflows_v3=workflows_v3, evidence_pool_v3=evidence_pool_v3)
     labels = {
         "sufficient": "Memadai",
         "partial": "Sebagian memadai",
         "insufficient": "Belum memadai",
     }
-    st.write(f"Status: **{labels.get(sufficiency.get('status'), sufficiency.get('status'))}**")
+    st.write(f"Status: **{labels.get(summary['status'], summary['status'])}**")
     metrics = st.columns(3)
-    metrics[0].metric("Score", f"{float(sufficiency.get('score', 0)):.2f}")
-    metrics[1].metric("Evidence unik", int(sufficiency.get("unique_evidence_count", 0)))
-    metrics[2].metric("Sumber unik", int(sufficiency.get("unique_source_count", 0)))
+    metrics[0].metric("Score", f"{float(summary['score'] or 0):.2f}")
+    metrics[1].metric("Evidence unik", summary["unique_chunk_count"])
+    metrics[2].metric("Sumber unik", summary["unique_source_count"])
     st.caption(
         "Score ini adalah heuristic kecukupan evidence retrieval MetaGuard, "
         "bukan bukti kepatuhan, kecukupan hukum, atau kebenaran interpretasi."
@@ -203,14 +213,14 @@ def _show_evidence_sufficiency(
     for reason in sufficiency.get("reasons", []):
         st.info(reason)
     with st.expander("Riwayat retrieval evidence"):
-        if not attempts:
+        history = summary["history"]
+        if not history:
             st.info("Belum ada attempt retrieval.")
-        for attempt in attempts:
-            st.write(
-                f"Attempt {attempt.get('attempt_number')}: "
-                f"{attempt.get('sufficiency_status')} "
-                f"(score {attempt.get('sufficiency_score')})"
-            )
+        for attempt in history:
+            if summary["uses_v3"]:
+                st.write(f"{attempt['evidence_need']}: Attempt {attempt['attempt_count']} | {attempt['state']} | score {attempt['score']}")
+            else:
+                st.write(f"Attempt {attempt.get('attempt_number')}: {attempt.get('sufficiency_status')} (score {attempt.get('sufficiency_score')})")
             if attempt.get("missing_coverage"):
                 st.caption("Coverage belum tersedia: " + ", ".join(attempt["missing_coverage"]))
 
@@ -616,7 +626,7 @@ def main() -> None:
         )
         _show_agentic_review(decision, st.session_state.agent_audit)
         _show_contextual_validation({}, completed=False)
-        _show_evidence_sufficiency({}, [])
+        _show_evidence_sufficiency({}, [], [], [])
         st.info("Unggah file CSV untuk memulai analisis.")
         return
 
@@ -1204,6 +1214,8 @@ def main() -> None:
     _show_evidence_sufficiency(
         st.session_state.evidence_sufficiency,
         st.session_state.retrieval_attempts,
+        st.session_state.evidence_workflow_results_v3,
+        st.session_state.evidence_pool_v3,
     )
 
     st.subheader("Analisis dengan Gemini")
