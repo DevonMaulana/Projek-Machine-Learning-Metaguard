@@ -84,6 +84,14 @@
       "expected_data_type": "string"
     },
     {
+      "concept_id": "environment_measurement",
+      "domain_id": "environment",
+      "canonical_name": "nilai_pengukuran",
+      "aliases": ["nilai_pengukuran"],
+      "description": "Curated MetaGuard semantic mapping for a generic environmental sensor measurement.",
+      "expected_data_type": "number"
+    },
+    {
       "concept_id": "measurement_date",
       "domain_id": "environment",
       "canonical_name": "tanggal_pengukuran",

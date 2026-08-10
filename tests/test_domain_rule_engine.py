@@ -210,6 +210,17 @@ def test_environment_missing_sensor_skips_and_missing_measurements_are_not_appli
     assert not missing_measurement.findings_count
 
 
+def test_environment_rule_resolves_nilai_pengukuran_and_ignores_empty_or_active_rows() -> None:
+    result = run_domain_rule_validation(
+        pd.DataFrame({"status_sensor": ["Offline", "Nonaktif", "Tidak Aktif", "Offline", "Aktif"], "nilai_pengukuran": [7.0, 8.0, 9.0, None, 6.0]}),
+        selected_domain="environment",
+    )
+    rule = result.rule_results[0]
+    assert rule.state == RULE_STATE_EVALUATED
+    assert rule.findings[0]["affected_rows"] == 3
+    assert rule.findings[0]["resolved_columns"][1]["concept_id"] == "environment_measurement"
+
+
 @pytest.mark.parametrize("status", ["aktif", "online", "unknown", None])
 def test_environment_only_flags_explicit_offline_statuses(status: str | None) -> None:
     result = run_domain_rule_validation(

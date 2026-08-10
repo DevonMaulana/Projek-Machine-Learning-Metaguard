@@ -70,7 +70,7 @@
       "severity": "low",
       "rule_type": "cross_column",
       "required_concepts": ["sensor_status"],
-      "optional_concepts": ["ph_measurement", "pm25_measurement", "pm10_measurement"],
+      "optional_concepts": ["environment_measurement", "ph_measurement", "pm25_measurement", "pm10_measurement"],
       "evaluator_id": "environment_offline_sensor_with_measurement",
       "provenance_type": "HEURISTIC",
       "policy_requirement": false,
