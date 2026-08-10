@@ -79,6 +79,7 @@ def test_education_and_environment_pilot_concept_mappings() -> None:
     assert registry.resolve("Jumlah Siswa", "education").concept_id == "student_count"
     assert registry.resolve("jml_guru", "education").concept_id == "teacher_count"
     assert registry.resolve("total_kelas", "education").concept_id == "classroom_count"
+    assert registry.resolve("jumlah_ruang_kelas", "education").concept_id == "classroom_count"
     assert registry.resolve("persentase_kehadiran", "education").concept_id == (
         "attendance_percentage"
     )

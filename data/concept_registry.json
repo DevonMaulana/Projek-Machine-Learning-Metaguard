@@ -54,7 +54,7 @@
       "concept_id": "classroom_count",
       "domain_id": "education",
       "canonical_name": "jumlah_kelas",
-      "aliases": ["jumlah_kelas", "jml_kelas", "total_kelas"],
+      "aliases": ["jumlah_kelas", "jml_kelas", "total_kelas", "jumlah_ruang_kelas"],
       "description": "Curated MetaGuard semantic mapping for classroom count.",
       "expected_data_type": "integer"
     },
