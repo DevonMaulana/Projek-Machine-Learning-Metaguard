@@ -31,8 +31,9 @@ def test_registry_loads_stable_initial_concept_ids() -> None:
         "teacher_count",
         "classroom_count",
         "attendance_percentage",
-        "ph_measurement",
-        "sensor_status",
+            "ph_measurement",
+            "environment_measurement",
+            "sensor_status",
         "measurement_date",
         "pm25_measurement",
         "pm10_measurement",
@@ -84,6 +85,7 @@ def test_education_and_environment_pilot_concept_mappings() -> None:
         "attendance_percentage"
     )
     assert registry.resolve("ph_air", "environment").concept_id == "ph_measurement"
+    assert registry.resolve("nilai_pengukuran", "environment").concept_id == "environment_measurement"
     assert registry.resolve("status_sensor", "environment").concept_id == "sensor_status"
     assert registry.resolve("tanggal_pengukuran", "environment").concept_id == (
         "measurement_date"
